@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use comfy_table::{presets::UTF8_FULL, Table};
 use mlua::prelude::*;
@@ -43,7 +43,7 @@ impl Editor {
             editor,
             lua,
 
-            table_format: TableFormat::Inspect,
+            table_format: TableFormat::ComfyTable(true),
         })
     }
 
@@ -89,6 +89,41 @@ impl Editor {
         }
     }
 
+    fn is_array(tbl: &LuaTable) -> LuaResult<(bool, bool)> {
+        let mut is_array = true;
+        let mut has_table = false;
+
+        for (key, value) in tbl.pairs::<LuaValue, LuaValue>().flatten() {
+            if !(key.is_integer() || key.is_number()) {
+                is_array = false;
+            }
+
+            if let LuaValue::Table(inner) = value {
+                let (is_array, has_tbl) = Self::is_array(&inner)?;
+
+                if !is_array || has_tbl {
+                    has_table = true;
+                }
+            }
+        }
+
+        Ok((is_array, has_table))
+    }
+
+    fn print_array(tbl: &LuaTable) -> LuaResult<String> {
+        let mut buff = Vec::new();
+
+        for (_, value) in tbl.pairs::<LuaValue, LuaValue>().flatten() {
+            if let LuaValue::Table(inner) = value {
+                buff.push(Self::print_array(&inner)?);
+            } else {
+                buff.push(Self::lua_to_string(&value)?);
+            }
+        }
+
+        Ok(format!("{{ {} }}", buff.join(", ")))
+    }
+
     fn pretty_table(tbl: &LuaTable, recursive: bool, visited: &mut HashMap<String, usize>) -> LuaResult<String> {
         let addr = Self::addr_tbl(tbl);
 
@@ -98,6 +133,12 @@ impl Editor {
         
         let id = visited.len();
         visited.insert(addr.clone(), id);
+
+        let (is_array, has_table) = Self::is_array(tbl)?;
+
+        if is_array && !has_table {
+            return Self::print_array(tbl)
+        }
 
         let mut table = Table::new();
         table.load_preset(UTF8_FULL);
