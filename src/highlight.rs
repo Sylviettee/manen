@@ -9,30 +9,23 @@ const LUA_HIGHLIGHT_NAMES: &[&str] = &[
     "keyword.return",
     "keyword.function",
     "keyword.operator",
-
     "punctuation.delimiter",
     "punctuation.bracket",
-
     "variable",
     "variable.builtin",
-
     "constant",
     "constant.builtin",
-
     "function",
     "function.call",
     "function.builtin",
     "method",
     "parameter",
-
     "string",
     "string.escape",
     "boolean",
     "number",
-
     "field",
     "constructor",
-
     "label",
     "repeat",
     "conditional",
@@ -61,30 +54,23 @@ const STYLES: &[Style] = &[
     style_fg(Color::Purple),
     style_fg(Color::Purple),
     style_fg(Color::Purple),
-
     style_fg(Color::LightGray),
     style_fg(Color::LightRed),
-
     style_fg(Color::LightGray),
     style_fg(Color::Red),
-
     style_fg(Color::Magenta),
     style_fg(Color::Magenta),
-
     style_fg(Color::LightBlue),
     style_fg(Color::LightBlue),
     style_fg(Color::LightBlue),
     style_fg(Color::LightBlue),
     style_fg(Color::LightRed),
-
     style_fg(Color::Green),
     style_fg(Color::Cyan),
     style_fg(Color::Yellow),
     style_fg(Color::Yellow),
-
     style_fg(Color::LightGray),
     style_fg(Color::LightRed),
-
     style_fg(Color::LightGray),
     style_fg(Color::Purple),
     style_fg(Color::Purple),
@@ -105,14 +91,15 @@ impl LuaHighlighter {
             "lua",
             tree_sitter_lua::HIGHLIGHTS_QUERY,
             tree_sitter_lua::INJECTIONS_QUERY,
-            tree_sitter_lua::LOCALS_QUERY
-        ).unwrap();
+            tree_sitter_lua::LOCALS_QUERY,
+        )
+        .unwrap();
 
         config.configure(LUA_HIGHLIGHT_NAMES);
 
         Self {
             highlighter: RefCell::new(highlighter),
-            config
+            config,
         }
     }
 }
@@ -120,12 +107,7 @@ impl LuaHighlighter {
 impl reedline::Highlighter for LuaHighlighter {
     fn highlight(&self, line: &str, _cursor: usize) -> StyledText {
         let mut binding = self.highlighter.borrow_mut();
-        let highlights = binding.highlight(
-            &self.config,
-            line.as_bytes(),
-            None,
-            |_| None
-        );
+        let highlights = binding.highlight(&self.config, line.as_bytes(), None, |_| None);
 
         let mut text = StyledText::new();
 
@@ -134,19 +116,19 @@ impl reedline::Highlighter for LuaHighlighter {
         } else {
             text.push((Style::new(), line.to_string()));
 
-            return text
+            return text;
         };
 
         let mut style = Style::new();
 
         for event in highlights.flatten() {
             match event {
-                HighlightEvent::Source {start, end} => {
-                    text.push((style,  line[start..end].to_string()))
-                },
+                HighlightEvent::Source { start, end } => {
+                    text.push((style, line[start..end].to_string()))
+                }
                 HighlightEvent::HighlightStart(s) => {
                     style = STYLES[s.0];
-                },
+                }
                 HighlightEvent::HighlightEnd => {}
             }
         }

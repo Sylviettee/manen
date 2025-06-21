@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use comfy_table::{presets::UTF8_FULL_CONDENSED, Table};
+use comfy_table::{Table, presets::UTF8_FULL_CONDENSED};
 use mlua::prelude::*;
 
 const INSPECT_CODE: &str = include_str!("inspect.lua");
@@ -29,7 +29,7 @@ pub fn lua_to_string(value: &LuaValue) -> LuaResult<String> {
     match value {
         LuaValue::String(string) => Ok(convert_string(string)),
         LuaValue::Table(tbl) => Ok(addr_tbl(tbl)),
-        value => value.to_string()
+        value => value.to_string(),
     }
 }
 
@@ -68,20 +68,24 @@ fn print_array(tbl: &LuaTable) -> LuaResult<String> {
     Ok(format!("{{ {} }}", buff.join(", ")))
 }
 
-fn comfy_table(tbl: &LuaTable, recursive: bool, visited: &mut HashMap<String, usize>) -> LuaResult<String> {
+fn comfy_table(
+    tbl: &LuaTable,
+    recursive: bool,
+    visited: &mut HashMap<String, usize>,
+) -> LuaResult<String> {
     let addr = addr_tbl(tbl);
 
     if let Some(id) = visited.get(&addr) {
-        return Ok(format!("<table {id}>"))
+        return Ok(format!("<table {id}>"));
     }
-    
+
     let id = visited.len();
     visited.insert(addr.clone(), id);
 
     let (is_array, has_table) = is_array(tbl)?;
 
     if is_array && !has_table {
-        return print_array(tbl)
+        return print_array(tbl);
     }
 
     let mut table = Table::new();
@@ -91,21 +95,12 @@ fn comfy_table(tbl: &LuaTable, recursive: bool, visited: &mut HashMap<String, us
     for (key, value) in tbl.pairs::<LuaValue, LuaValue>().flatten() {
         let (key_str, value_str) = if let LuaValue::Table(sub) = value {
             if recursive {
-                (
-                    lua_to_string(&key)?,
-                    comfy_table(&sub, recursive, visited)?
-                )
+                (lua_to_string(&key)?, comfy_table(&sub, recursive, visited)?)
             } else {
-                (
-                    lua_to_string(&key)?,
-                    addr.clone(),
-                )
+                (lua_to_string(&key)?, addr.clone())
             }
         } else {
-            (
-                lua_to_string(&key)?,
-                lua_to_string(&value)?,
-            )
+            (lua_to_string(&key)?, lua_to_string(&value)?)
         };
 
         table.add_row(vec![key_str, value_str]);
@@ -131,7 +126,7 @@ impl TableFormat {
 
                     self.format(lua, tbl)
                 }
-            },
+            }
             TableFormat::ComfyTable(recursive) => {
                 let mut visited = HashMap::new();
                 comfy_table(tbl, *recursive, &mut visited)
