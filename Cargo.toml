@@ -7,4 +7,7 @@ edition = "2024"
 color-eyre = "0.6.5"
 comfy-table = "7.1.4"
 mlua = { version = "0.10.5", features = ["lua54", "vendored", "anyhow"] }
+nu-ansi-term = "0.50.1"
 reedline = "0.40.0"
+tree-sitter-highlight = "0.25.6"
+tree-sitter-lua = "0.2.0"

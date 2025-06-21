@@ -1,6 +1,8 @@
 use mlua::prelude::*;
 use reedline::{DefaultPrompt, DefaultPromptSegment, Reedline, Signal};
 
+use crate::highlight::LuaHighlighter;
+
 pub enum TableFormat {
     Ascii,
     Lua,
@@ -21,11 +23,13 @@ impl Editor {
         let lua = Lua::new();
         let version: String = lua.globals().get("_VERSION")?;
 
-        let editor = Reedline::create();
         let prompt = DefaultPrompt::new(
             DefaultPromptSegment::Basic(version),
             DefaultPromptSegment::Empty,
         );
+
+        let editor = Reedline::create()
+            .with_highlighter(Box::new(LuaHighlighter::new()));
 
         Ok(Self {
             prompt,
