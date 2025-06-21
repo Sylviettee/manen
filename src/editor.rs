@@ -1,18 +1,7 @@
-use std::collections::HashMap;
-
-use comfy_table::{presets::UTF8_FULL, Table};
 use mlua::prelude::*;
 use reedline::{DefaultPrompt, DefaultPromptSegment, Reedline, Signal};
 
-use crate::highlight::LuaHighlighter;
-
-const INSPECT_CODE: &str = include_str!("inspect.lua");
-
-pub enum TableFormat {
-    ComfyTable(bool),
-    Inspect,
-    Address,
-}
+use crate::{format::{lua_to_string, TableFormat}, highlight::LuaHighlighter};
 
 pub struct Editor {
     prompt: DefaultPrompt,
@@ -26,9 +15,6 @@ impl Editor {
     pub fn new() -> LuaResult<Self> {
         let lua = Lua::new();
         let version: String = lua.globals().get("_VERSION")?;
-
-        let inspect: LuaTable = lua.load(INSPECT_CODE).eval()?;
-        lua.globals().set("_inspect", inspect)?;
 
         let prompt = DefaultPrompt::new(
             DefaultPromptSegment::Basic(version),
@@ -67,136 +53,16 @@ impl Editor {
         }
     }
 
-    fn addr_tbl(tbl: &LuaTable) -> String {
-        format!("table@{:?}", tbl.to_pointer())
-    }
-
-    fn convert_string(string: &LuaString) -> String {
-        let bytes = string
-            .as_bytes()
-            .iter()
-            .flat_map(|b| std::ascii::escape_default(*b))
-            .collect::<Vec<_>>();
-
-        String::from_utf8_lossy(&bytes).to_string()
-    }
-
-    fn lua_to_string(value: &LuaValue) -> LuaResult<String> {
-        match value {
-            LuaValue::String(string) => Ok(Self::convert_string(string)),
-            LuaValue::Table(tbl) => Ok(Self::addr_tbl(tbl)),
-            value => value.to_string()
-        }
-    }
-
-    fn is_array(tbl: &LuaTable) -> LuaResult<(bool, bool)> {
-        let mut is_array = true;
-        let mut has_table = false;
-
-        for (key, value) in tbl.pairs::<LuaValue, LuaValue>().flatten() {
-            if !(key.is_integer() || key.is_number()) {
-                is_array = false;
-            }
-
-            if let LuaValue::Table(inner) = value {
-                let (is_array, has_tbl) = Self::is_array(&inner)?;
-
-                if !is_array || has_tbl {
-                    has_table = true;
-                }
-            }
-        }
-
-        Ok((is_array, has_table))
-    }
-
-    fn print_array(tbl: &LuaTable) -> LuaResult<String> {
-        let mut buff = Vec::new();
-
-        for (_, value) in tbl.pairs::<LuaValue, LuaValue>().flatten() {
-            if let LuaValue::Table(inner) = value {
-                buff.push(Self::print_array(&inner)?);
-            } else {
-                buff.push(Self::lua_to_string(&value)?);
-            }
-        }
-
-        Ok(format!("{{ {} }}", buff.join(", ")))
-    }
-
-    fn pretty_table(tbl: &LuaTable, recursive: bool, visited: &mut HashMap<String, usize>) -> LuaResult<String> {
-        let addr = Self::addr_tbl(tbl);
-
-        if let Some(id) = visited.get(&addr) {
-            return Ok(format!("<table {id}>"))
-        }
-        
-        let id = visited.len();
-        visited.insert(addr.clone(), id);
-
-        let (is_array, has_table) = Self::is_array(tbl)?;
-
-        if is_array && !has_table {
-            return Self::print_array(tbl)
-        }
-
-        let mut table = Table::new();
-        table.load_preset(UTF8_FULL);
-        table.set_header(vec![format!("<table {id}>")]);
-
-        for (key, value) in tbl.pairs::<LuaValue, LuaValue>().flatten() {
-            let (key_str, value_str) = if let LuaValue::Table(sub) = value {
-                if recursive {
-                    (
-                        Self::lua_to_string(&key)?,
-                        Self::pretty_table(&sub, recursive, visited)?
-                    )
-                } else {
-                    (
-                        Self::lua_to_string(&key)?,
-                        addr.clone(),
-                    )
-                }
-            } else {
-                (
-                    Self::lua_to_string(&key)?,
-                    Self::lua_to_string(&value)?,
-                )
-            };
-
-            table.add_row(vec![key_str, value_str]);
-        }
-
-        if table.is_empty() {
-            Ok(String::from("{}"))
-        } else {
-            Ok(table.to_string())
-        }
-    }
-
-    fn handle_table(&self, tbl: &LuaTable) -> LuaResult<()> {
-        match self.table_format {
-            TableFormat::Address => println!("table@{:?}", tbl.to_pointer()),
-            TableFormat::Inspect => {
-                let inspect: LuaTable = self.lua.globals().get("_inspect")?;
-                println!("{}", inspect.call::<String>(tbl)?);
-            },
-            TableFormat::ComfyTable(recursive) => {
-                let mut visited = HashMap::new();
-                println!("{}", Self::pretty_table(tbl, recursive, &mut visited)?)
-            }
-        }
-
-        Ok(())
-    }
-
     fn eval(&mut self, line: &str) -> LuaResult<()> {
         let value: LuaValue = self.lua.load(line).eval()?;
 
-        match value {
-            LuaValue::Table(tbl) => self.handle_table(&tbl)?,
-            value => println!("{}", Self::lua_to_string(&value)?),
-        }
+        let stringify = match value {
+            LuaValue::Table(tbl) => self.table_format.format(&self.lua, &tbl)?,
+            value => lua_to_string(&value)?,
+        };
+
+        // TODO; colorize
+        println!("{stringify}");
 
         Ok(())
     }
