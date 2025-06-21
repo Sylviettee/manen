@@ -2,8 +2,8 @@ use mlua::prelude::*;
 use reedline::{DefaultPrompt, DefaultPromptSegment, Reedline, Signal};
 
 use crate::{
-    format::{TableFormat, lua_to_string},
-    highlight::LuaHighlighter,
+    format::{lua_to_string, TableFormat},
+    highlight::LuaHighlighter, validator::LuaValidator,
 };
 
 pub struct Editor {
@@ -24,7 +24,9 @@ impl Editor {
             DefaultPromptSegment::Empty,
         );
 
-        let editor = Reedline::create().with_highlighter(Box::new(LuaHighlighter::new()));
+        let editor = Reedline::create()
+            .with_highlighter(Box::new(LuaHighlighter::new()))
+            .with_validator(Box::new(LuaValidator::new()));
 
         Ok(Self {
             prompt,
