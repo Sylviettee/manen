@@ -6,9 +6,11 @@ use reedline::{DefaultPrompt, DefaultPromptSegment, Reedline, Signal};
 
 use crate::highlight::LuaHighlighter;
 
+const INSPECT_CODE: &str = include_str!("inspect.lua");
+
 pub enum TableFormat {
-    Pretty,
-    Lua,
+    ComfyTable(bool),
+    Inspect,
     Address,
 }
 
@@ -18,13 +20,15 @@ pub struct Editor {
     lua: Lua,
 
     table_format: TableFormat,
-    print_nested_tables: bool,
 }
 
 impl Editor {
     pub fn new() -> LuaResult<Self> {
         let lua = Lua::new();
         let version: String = lua.globals().get("_VERSION")?;
+
+        let inspect: LuaTable = lua.load(INSPECT_CODE).eval()?;
+        lua.globals().set("_inspect", inspect)?;
 
         let prompt = DefaultPrompt::new(
             DefaultPromptSegment::Basic(version),
@@ -39,8 +43,7 @@ impl Editor {
             editor,
             lua,
 
-            table_format: TableFormat::Pretty,
-            print_nested_tables: true,
+            table_format: TableFormat::Inspect,
         })
     }
 
@@ -86,7 +89,7 @@ impl Editor {
         }
     }
 
-    fn pretty_table(&self, tbl: &LuaTable, visited: &mut HashMap<String, usize>) -> LuaResult<String> {
+    fn pretty_table(tbl: &LuaTable, recursive: bool, visited: &mut HashMap<String, usize>) -> LuaResult<String> {
         let addr = Self::addr_tbl(tbl);
 
         if let Some(id) = visited.get(&addr) {
@@ -102,10 +105,10 @@ impl Editor {
 
         for (key, value) in tbl.pairs::<LuaValue, LuaValue>().flatten() {
             let (key_str, value_str) = if let LuaValue::Table(sub) = value {
-                if self.print_nested_tables {
+                if recursive {
                     (
                         Self::lua_to_string(&key)?,
-                        self.pretty_table(&sub, visited)?
+                        Self::pretty_table(&sub, recursive, visited)?
                     )
                 } else {
                     (
@@ -133,10 +136,13 @@ impl Editor {
     fn handle_table(&self, tbl: &LuaTable) -> LuaResult<()> {
         match self.table_format {
             TableFormat::Address => println!("table@{:?}", tbl.to_pointer()),
-            TableFormat::Lua => todo!(),
-            TableFormat::Pretty => {
+            TableFormat::Inspect => {
+                let inspect: LuaTable = self.lua.globals().get("_inspect")?;
+                println!("{}", inspect.call::<String>(tbl)?);
+            },
+            TableFormat::ComfyTable(recursive) => {
                 let mut visited = HashMap::new();
-                println!("{}", self.pretty_table(tbl, &mut visited)?)
+                println!("{}", Self::pretty_table(tbl, recursive, &mut visited)?)
             }
         }
 
