@@ -30,6 +30,9 @@ const LUA_HIGHLIGHT_NAMES: &[&str] = &[
     "boolean",
     "number",
 
+    "field",
+    "constructor",
+
     "label",
     "repeat",
     "conditional",
@@ -49,7 +52,7 @@ const fn style_fg(color: Color) -> Style {
         is_reverse: false,
         is_hidden: false,
         is_strikethrough: false,
-        prefix_with_reset: false,
+        prefix_with_reset: true,
     }
 }
 
@@ -78,6 +81,9 @@ const STYLES: &[Style] = &[
     style_fg(Color::Cyan),
     style_fg(Color::Yellow),
     style_fg(Color::Yellow),
+
+    style_fg(Color::LightGray),
+    style_fg(Color::LightRed),
 
     style_fg(Color::LightGray),
     style_fg(Color::Purple),
