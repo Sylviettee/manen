@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use comfy_table::{presets::UTF8_FULL, Table};
 use mlua::prelude::*;
@@ -86,30 +86,41 @@ impl Editor {
         }
     }
 
-    fn pretty_table(&self, tbl: &LuaTable, visited: &mut HashSet<String>) -> LuaResult<String> {
+    fn pretty_table(&self, tbl: &LuaTable, visited: &mut HashMap<String, usize>) -> LuaResult<String> {
         let addr = Self::addr_tbl(tbl);
 
-        if visited.contains(&addr) {
-            return Ok(format!("{addr} (self-reference)"))
-        } else {
-            visited.insert(addr.clone());
+        if let Some(id) = visited.get(&addr) {
+            return Ok(format!("<table {id}>"))
         }
+        
+        let id = visited.len();
+        visited.insert(addr.clone(), id);
 
         let mut table = Table::new();
         table.load_preset(UTF8_FULL);
+        table.set_header(vec![format!("<table {id}>")]);
 
         for (key, value) in tbl.pairs::<LuaValue, LuaValue>().flatten() {
-            let value_str = if let LuaValue::Table(sub) = value {
+            let (key_str, value_str) = if let LuaValue::Table(sub) = value {
                 if self.print_nested_tables {
-                    self.pretty_table(&sub, visited)?
+                    (
+                        Self::lua_to_string(&key)?,
+                        self.pretty_table(&sub, visited)?
+                    )
                 } else {
-                    addr.clone()
+                    (
+                        Self::lua_to_string(&key)?,
+                        addr.clone(),
+                    )
                 }
             } else {
-                Self::lua_to_string(&value)?
+                (
+                    Self::lua_to_string(&key)?,
+                    Self::lua_to_string(&value)?,
+                )
             };
 
-            table.add_row(vec![Self::lua_to_string(&key)?, value_str]);
+            table.add_row(vec![key_str, value_str]);
         }
 
         if table.is_empty() {
@@ -124,7 +135,7 @@ impl Editor {
             TableFormat::Address => println!("table@{:?}", tbl.to_pointer()),
             TableFormat::Lua => todo!(),
             TableFormat::Pretty => {
-                let mut visited = HashSet::new();
+                let mut visited = HashMap::new();
                 println!("{}", self.pretty_table(tbl, &mut visited)?)
             }
         }
