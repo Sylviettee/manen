@@ -15,10 +15,12 @@ const LUA_HIGHLIGHT_NAMES: &[&str] = &[
     "variable.builtin",
     "constant",
     "constant.builtin",
+    "attribute",
     "function",
     "function.call",
     "function.builtin",
     "method",
+    "method.call",
     "parameter",
     "string",
     "string.escape",
@@ -31,6 +33,7 @@ const LUA_HIGHLIGHT_NAMES: &[&str] = &[
     "conditional",
     "operator",
     "comment",
+    "preproc",
 ];
 
 const fn style_fg(color: Color) -> Style {
@@ -50,32 +53,35 @@ const fn style_fg(color: Color) -> Style {
 }
 
 const STYLES: &[Style] = &[
-    style_fg(Color::Purple),
-    style_fg(Color::Purple),
-    style_fg(Color::Purple),
-    style_fg(Color::Purple),
-    style_fg(Color::LightGray),
-    style_fg(Color::LightRed),
-    style_fg(Color::LightGray),
-    style_fg(Color::Red),
-    style_fg(Color::Magenta),
-    style_fg(Color::Magenta),
-    style_fg(Color::LightBlue),
-    style_fg(Color::LightBlue),
-    style_fg(Color::LightBlue),
-    style_fg(Color::LightBlue),
-    style_fg(Color::LightRed),
-    style_fg(Color::Green),
-    style_fg(Color::Cyan),
-    style_fg(Color::Yellow),
-    style_fg(Color::Yellow),
-    style_fg(Color::LightGray),
-    style_fg(Color::LightRed),
-    style_fg(Color::LightGray),
-    style_fg(Color::Purple),
-    style_fg(Color::Purple),
-    style_fg(Color::LightBlue),
-    style_fg(Color::DarkGray),
+    style_fg(Color::Purple),      // keyword
+    style_fg(Color::Purple),      // keyword.return
+    style_fg(Color::Purple),      // keyword.function
+    style_fg(Color::Purple),      // keyword.operator
+    style_fg(Color::LightGray),   // punctuation.delimiter
+    style_fg(Color::LightRed),    // punctuation.bracket
+    style_fg(Color::LightGray),   // variable
+    style_fg(Color::LightRed),    // variable.builtin
+    style_fg(Color::LightYellow), // constant
+    style_fg(Color::LightYellow), // constant.builtin
+    style_fg(Color::Red),         // attribute
+    style_fg(Color::LightBlue),   // function
+    style_fg(Color::LightBlue),   // function.call
+    style_fg(Color::LightBlue),   // function.builtin
+    style_fg(Color::LightBlue),   // method
+    style_fg(Color::LightBlue),   // method.call
+    style_fg(Color::Red),         // parameter
+    style_fg(Color::Green),       // string
+    style_fg(Color::Cyan),        // string.escape
+    style_fg(Color::LightYellow), // boolean
+    style_fg(Color::LightYellow), // number
+    style_fg(Color::LightGray),   // field
+    style_fg(Color::LightRed),    // constructor
+    style_fg(Color::LightGray),   // label
+    style_fg(Color::Purple),      // repeat
+    style_fg(Color::Purple),      // conditional
+    style_fg(Color::LightBlue),   // operator
+    style_fg(Color::DarkGray),    // comment
+    style_fg(Color::DarkGray),    // preproc
 ];
 
 pub struct LuaHighlighter {
