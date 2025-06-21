@@ -39,18 +39,57 @@ impl Editor {
 
             match signal {
                 Ok(Signal::Success(line)) => {
+                    if line.starts_with(".") {
+                        if let Err(e) = self.eval_special(&line) {
+                            eprintln!("{e}")
+                        }
+
+                        continue;
+                    }
+
                     if let Err(e) = self.eval(&line) {
                         eprintln!("{e}")
                     }
                 }
                 //  TODO; this should cancel the current Lua execution if possible
                 Ok(Signal::CtrlC) | Ok(Signal::CtrlD) => {
-                    println!("aborted");
                     break
                 },
                 _ => {}
             }
         }
+    }
+
+    // .format <format> [true/false]
+    fn eval_special(&mut self, line: &str) -> LuaResult<()> {
+        let mut split = line
+            .strip_prefix(".")
+            .unwrap()
+            .split_whitespace();
+
+        let cmd = split.next();
+
+        match cmd {
+            Some("format") => {
+                match split.next() {
+                    Some("inspect") => {
+                        self.table_format = TableFormat::Inspect;
+                    },
+                    Some("address") => {
+                        self.table_format = TableFormat::Address;
+                    },
+                    Some("comfytable") => {
+                        let nested = split.next().unwrap_or("").parse::<bool>().unwrap_or_default();
+
+                        self.table_format = TableFormat::ComfyTable(nested);
+                    },
+                    _ => println!("unknown subcommand")
+                }
+            },
+            _ => println!("unknown command")
+        }
+
+        Ok(())
     }
 
     fn eval(&mut self, line: &str) -> LuaResult<()> {
