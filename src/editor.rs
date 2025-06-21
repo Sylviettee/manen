@@ -101,7 +101,7 @@ impl Editor {
     }
 
     fn eval(&mut self, line: &str) -> LuaResult<()> {
-        let value: LuaValue = self.lua.load(line).eval()?;
+        let value: LuaValue = self.lua.load(line).set_name("=stdin").eval()?;
 
         let stringify = match value {
             LuaValue::Table(tbl) => self.table_format.format(&self.lua, &tbl)?,
