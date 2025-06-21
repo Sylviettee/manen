@@ -1,5 +1,8 @@
 use mlua::prelude::*;
-use reedline::{DefaultPrompt, DefaultPromptSegment, Reedline, Signal};
+use reedline::{
+    DefaultPrompt, DefaultPromptSegment, EditCommand, Emacs, KeyCode, KeyModifiers, Reedline,
+    ReedlineEvent, Signal, default_emacs_keybindings,
+};
 
 use crate::{
     format::{TableFormat, lua_to_string},
@@ -25,10 +28,18 @@ impl Editor {
             DefaultPromptSegment::Empty,
         );
 
+        let mut keybindings = default_emacs_keybindings();
+        keybindings.add_binding(
+            KeyModifiers::SHIFT,
+            KeyCode::Enter,
+            ReedlineEvent::Edit(vec![EditCommand::InsertNewline]),
+        );
+
         let editor = Reedline::create()
             .with_highlighter(Box::new(LuaHighlighter::new()))
             .with_validator(Box::new(LuaValidator::new()))
-            .with_hinter(Box::new(LuaValidator::new()));
+            .with_hinter(Box::new(LuaValidator::new()))
+            .with_edit_mode(Box::new(Emacs::new(keybindings)));
 
         Ok(Self {
             prompt,

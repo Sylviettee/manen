@@ -33,7 +33,7 @@ impl LuaValidator {
 impl Validator for LuaValidator {
     fn validate(&self, line: &str) -> ValidationResult {
         if line.starts_with(".") {
-            return ValidationResult::Complete
+            return ValidationResult::Complete;
         }
 
         match self.lua.load(line).into_function() {
