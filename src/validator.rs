@@ -31,11 +31,11 @@ impl LuaValidator {
 }
 
 fn load_lua(lua: &Lua, code: &str) -> LuaResult<LuaFunction> {
-    if let Ok(func) = lua.load(code).into_function() {
-        return Ok(func)
+    if let Ok(func) = lua.load(format!("return ({code})")).into_function() {
+        return Ok(func);
     }
 
-    lua.load(format!("return ({code})")).into_function()
+    lua.load(code).into_function()
 }
 
 impl Validator for LuaValidator {
@@ -46,7 +46,16 @@ impl Validator for LuaValidator {
 
         match load_lua(&self.lua, line) {
             Ok(_) => ValidationResult::Complete,
-            Err(_) => ValidationResult::Incomplete,
+            Err(LuaError::SyntaxError {
+                incomplete_input, ..
+            }) => {
+                if incomplete_input {
+                    ValidationResult::Incomplete
+                } else {
+                    ValidationResult::Complete
+                }
+            }
+            Err(_) => ValidationResult::Complete,
         }
     }
 }
@@ -64,13 +73,13 @@ impl Hinter for LuaValidator {
 
         let value: LuaValue = match lua.load(line).set_name("=").eval() {
             Ok(value) => value,
-            Err(LuaError::SyntaxError { message, incomplete_input: _ }) => {
+            Err(LuaError::SyntaxError { message, .. }) => {
                 let message = message.split(":").last().unwrap().trim();
                 let style = Style::new().fg(Color::Red).dimmed();
 
-                return style.paint(format!(" ({message})")).to_string()
-            },
-            Err(_) => return String::new()
+                return style.paint(format!(" ({message})")).to_string();
+            }
+            Err(_) => return String::new(),
         };
 
         if value.is_nil() {
