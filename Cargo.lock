@@ -488,6 +488,7 @@ dependencies = [
 name = "manen"
 version = "0.1.0"
 dependencies = [
+ "aho-corasick",
  "clap",
  "color-eyre",
  "comfy-table",

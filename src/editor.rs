@@ -117,7 +117,7 @@ impl Editor {
         let value: LuaValue = self.lua.load(line).set_name("=stdin").eval()?;
 
         let stringify = match value {
-            LuaValue::Table(tbl) => self.table_format.format(&self.lua, &tbl)?,
+            LuaValue::Table(tbl) => self.table_format.format(&self.lua, &tbl, true)?,
             value => lua_to_string(&value)?,
         };
 

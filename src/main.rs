@@ -12,6 +12,7 @@ use reedline::Highlighter;
 mod editor;
 mod format;
 mod highlight;
+mod inspect;
 mod validator;
 
 #[derive(Parser)]

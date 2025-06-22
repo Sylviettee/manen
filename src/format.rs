@@ -2,6 +2,10 @@ use std::collections::HashMap;
 
 use comfy_table::{Table, presets::UTF8_FULL_CONDENSED};
 use mlua::prelude::*;
+use nu_ansi_term::Color;
+use reedline::Highlighter;
+
+use crate::{highlight::LuaHighlighter, inspect::cleanup_string};
 
 const INSPECT_CODE: &str = include_str!("inspect.lua");
 
@@ -15,19 +19,9 @@ fn addr_tbl(tbl: &LuaTable) -> String {
     format!("table@{:?}", tbl.to_pointer())
 }
 
-fn convert_string(string: &LuaString) -> String {
-    let bytes = string
-        .as_bytes()
-        .iter()
-        .flat_map(|b| std::ascii::escape_default(*b))
-        .collect::<Vec<_>>();
-
-    String::from_utf8_lossy(&bytes).to_string()
-}
-
 pub fn lua_to_string(value: &LuaValue) -> LuaResult<String> {
     match value {
-        LuaValue::String(string) => Ok(convert_string(string)),
+        LuaValue::String(string) => Ok(cleanup_string(string)),
         LuaValue::Table(tbl) => Ok(addr_tbl(tbl)),
         value => value.to_string(),
     }
@@ -114,17 +108,34 @@ fn comfy_table(
 }
 
 impl TableFormat {
-    pub fn format(&self, lua: &Lua, tbl: &LuaTable) -> LuaResult<String> {
+    pub fn format(&self, lua: &Lua, tbl: &LuaTable, colorize: bool) -> LuaResult<String> {
         match self {
-            TableFormat::Address => Ok(format!("table@{:?}", tbl.to_pointer())),
+            TableFormat::Address => {
+                if colorize {
+                    Ok(format!(
+                        "{}{}{}",
+                        Color::LightBlue.paint("table"),
+                        Color::Default.paint("@"),
+                        Color::LightYellow.paint(format!("{:?}", tbl.to_pointer()))
+                    ))
+                } else {
+                    Ok(format!("table@{:?}", tbl.to_pointer()))
+                }
+            }
             TableFormat::Inspect => {
                 if let Some(inspect) = lua.globals().get::<Option<LuaTable>>("_inspect")? {
-                    inspect.call::<String>(tbl)
+                    let out = inspect.call::<String>(tbl)?;
+
+                    if colorize {
+                        Ok(LuaHighlighter::new().highlight(&out, 0).render_simple())
+                    } else {
+                        Ok(out)
+                    }
                 } else {
                     let inspect: LuaTable = lua.load(INSPECT_CODE).eval()?;
                     lua.globals().set("_inspect", inspect)?;
 
-                    self.format(lua, tbl)
+                    self.format(lua, tbl, colorize)
                 }
             }
             TableFormat::ComfyTable(recursive) => {
