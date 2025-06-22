@@ -62,10 +62,15 @@ impl Hinter for LuaValidator {
     ) -> String {
         let lua = Self::burner_lua();
 
-        let value: LuaValue = if let Ok(value) = lua.load(line).eval() {
-            value
-        } else {
-            return String::new();
+        let value: LuaValue = match lua.load(line).set_name("=").eval() {
+            Ok(value) => value,
+            Err(LuaError::SyntaxError { message, incomplete_input: _ }) => {
+                let message = message.split(":").last().unwrap().trim();
+                let style = Style::new().fg(Color::Red).dimmed();
+
+                return style.paint(format!(" ({message})")).to_string()
+            },
+            Err(_) => return String::new()
         };
 
         if value.is_nil() {
