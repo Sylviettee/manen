@@ -30,13 +30,21 @@ impl LuaValidator {
     }
 }
 
+fn load_lua(lua: &Lua, code: &str) -> LuaResult<LuaFunction> {
+    if let Ok(func) = lua.load(code).into_function() {
+        return Ok(func)
+    }
+
+    lua.load(format!("return ({code})")).into_function()
+}
+
 impl Validator for LuaValidator {
     fn validate(&self, line: &str) -> ValidationResult {
         if line.starts_with(".") {
             return ValidationResult::Complete;
         }
 
-        match self.lua.load(line).into_function() {
+        match load_lua(&self.lua, line) {
             Ok(_) => ValidationResult::Complete,
             Err(_) => ValidationResult::Incomplete,
         }
