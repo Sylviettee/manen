@@ -16,6 +16,7 @@ use crate::{format::comfy_table, inspect::inspect};
 mod editor;
 mod format;
 mod highlight;
+mod hinter;
 mod inspect;
 mod validator;
 

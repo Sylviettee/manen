@@ -13,7 +13,8 @@ use reedline::{
 };
 
 use crate::{
-    format::TableFormat, highlight::LuaHighlighter, inspect::display_basic, validator::LuaValidator,
+    format::TableFormat, highlight::LuaHighlighter, hinter::LuaHinter, inspect::display_basic,
+    validator::LuaValidator,
 };
 
 pub struct Editor {
@@ -58,7 +59,7 @@ impl Editor {
         let editor = Reedline::create()
             .with_highlighter(Box::new(LuaHighlighter::new()))
             .with_validator(Box::new(LuaValidator::new()))
-            .with_hinter(Box::new(LuaValidator::new()))
+            .with_hinter(Box::new(LuaHinter))
             .with_edit_mode(Box::new(Emacs::new(keybindings)));
 
         Ok(Self {
