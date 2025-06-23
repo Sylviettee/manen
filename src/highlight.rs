@@ -126,14 +126,20 @@ impl reedline::Highlighter for LuaHighlighter {
         };
 
         let mut style = Style::new();
+        let mut highlight = 0usize;
 
         for event in highlights.flatten() {
             match event {
                 HighlightEvent::Source { start, end } => {
-                    text.push((style, line[start..end].to_string()))
+                    text.push((style, line[start..end].to_string()));
+
+                    if highlight == 18 {
+                        style = STYLES[17];
+                    }
                 }
                 HighlightEvent::HighlightStart(s) => {
                     style = STYLES[s.0];
+                    highlight = s.0;
                 }
                 HighlightEvent::HighlightEnd => {}
             }

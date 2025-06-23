@@ -14,6 +14,7 @@ lazy_static! {
             String::from("\t"),
             String::from("\x0B"),
             String::from("\x7F"),
+            String::from("\\"),
         ];
 
         let mut replacements = vec![
@@ -25,6 +26,7 @@ lazy_static! {
             String::from("\\t"),
             String::from("\\v"),
             String::from("\\127"),
+            String::from("\\\\"),
         ];
 
         for i in 0..=31 {
@@ -38,7 +40,7 @@ lazy_static! {
     static ref REPLACEMENT_COLOR: Vec<String> = AC_REPLACEMENTS
         .1
         .iter()
-        .map(|s| Color::Cyan.paint(s).to_string())
+        .map(|s| format!("{}{}", Color::Cyan.paint(s), Color::Green.prefix()))
         .collect();
 }
 
@@ -49,9 +51,10 @@ fn escape_control(s: &str) -> String {
 }
 
 fn escape_control_color(s: &str) -> String {
-    ESCAPER
-        .replace_all(s, &REPLACEMENT_COLOR)
-        .replace("\\\\x", &Color::Cyan.paint("\\x").to_string())
+    ESCAPER.replace_all(s, &REPLACEMENT_COLOR).replace(
+        "\\\\x",
+        &format!("{}{}", Color::Cyan.paint("\\x"), Color::Green.prefix()),
+    )
 }
 
 fn remove_invalid(mut bytes: &[u8]) -> String {
