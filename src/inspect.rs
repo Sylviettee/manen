@@ -189,28 +189,39 @@ pub fn display_basic(val: &LuaValue, colorize: bool) -> String {
     }
 }
 
-fn is_array(tbl: &LuaTable) -> (bool, bool) {
-    let mut is_arr = true;
-    let mut has_table = false;
+fn is_short_printable_inner(tbl: &LuaTable, seen: &mut HashSet<usize>) -> bool {
+    let addr = tbl.to_pointer() as usize;
+
+    if seen.contains(&addr) {
+        return false;
+    }
+
+    seen.insert(addr);
 
     for (key, value) in tbl.pairs::<LuaValue, LuaValue>().flatten() {
-        if !(key.is_integer() || key.is_number()) {
-            is_arr = false;
+        if !key.is_integer() {
+            return false;
         }
 
         if let LuaValue::Table(inner) = value {
-            let (is_arr, has_tbl) = is_array(&inner);
+            let printable = is_short_printable_inner(&inner, seen);
 
-            if !is_arr || has_tbl {
-                has_table = true;
+            if !printable {
+                return false;
             }
         }
     }
 
-    (is_arr, has_table)
+    true
 }
 
-fn print_array(tbl: &LuaTable) -> String {
+pub fn is_short_printable(tbl: &LuaTable) -> bool {
+    let mut seen = HashSet::new();
+
+    is_short_printable_inner(tbl, &mut seen)
+}
+
+pub fn print_array(tbl: &LuaTable) -> String {
     let mut buff = Vec::new();
 
     if tbl.is_empty() {
@@ -275,15 +286,16 @@ fn display_table_inner(
     let id = seen.len();
     seen.insert(ptr, id);
 
-    let (is_array, has_table) = is_array(tbl);
+    let printable = is_short_printable(tbl);
 
-    if is_array && !has_table {
+    if printable {
         return Ok(print_array(tbl));
     }
 
     let mut buffer = String::new();
 
-    buffer.push_str("{\n");
+    // TODO; only output id if necessary
+    writeln!(&mut buffer, "<{id}>{{")?;
 
     for (key, value) in tbl.pairs::<LuaValue, LuaValue>().flatten() {
         buffer.push_str(&("   ".repeat(indent + 1)));
@@ -301,7 +313,11 @@ fn display_table_inner(
         }
 
         if let LuaValue::Table(t) = value {
-            todo!()
+            writeln!(
+                &mut buffer,
+                "{},",
+                display_table_inner(&t, colorize, seen, indent + 1)?
+            )?;
         } else {
             writeln!(&mut buffer, "{},", display_basic(&value, colorize))?;
         }

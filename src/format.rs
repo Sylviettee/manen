@@ -1,53 +1,15 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use comfy_table::{Table, presets::UTF8_FULL_CONDENSED};
 use mlua::prelude::*;
 use nu_ansi_term::Color;
-use reedline::Highlighter;
 
-use crate::{highlight::LuaHighlighter, inspect::display_basic};
-
-const INSPECT_CODE: &str = include_str!("inspect.lua");
+use crate::inspect::{display_basic, display_table, is_short_printable, print_array};
 
 pub enum TableFormat {
     ComfyTable(bool),
     Inspect,
     Address,
-}
-
-fn is_array(tbl: &LuaTable) -> LuaResult<(bool, bool)> {
-    let mut is_arr = true;
-    let mut has_table = false;
-
-    for (key, value) in tbl.pairs::<LuaValue, LuaValue>().flatten() {
-        if !(key.is_integer() || key.is_number()) {
-            is_arr = false;
-        }
-
-        if let LuaValue::Table(inner) = value {
-            let (is_arr, has_tbl) = is_array(&inner)?;
-
-            if !is_arr || has_tbl {
-                has_table = true;
-            }
-        }
-    }
-
-    Ok((is_arr, has_table))
-}
-
-fn print_array(tbl: &LuaTable) -> String {
-    let mut buff = Vec::new();
-
-    for (_, value) in tbl.pairs::<LuaValue, LuaValue>().flatten() {
-        if let LuaValue::Table(inner) = value {
-            buff.push(print_array(&inner));
-        } else {
-            buff.push(display_basic(&value, true));
-        }
-    }
-
-    format!("{{ {} }}", buff.join(", "))
 }
 
 fn comfy_table(
@@ -64,9 +26,9 @@ fn comfy_table(
     let id = visited.len();
     visited.insert(addr, id);
 
-    let (is_array, has_table) = is_array(tbl)?;
+    let printable = is_short_printable(tbl);
 
-    if is_array && !has_table {
+    if printable {
         return Ok(print_array(tbl));
     }
 
@@ -102,7 +64,7 @@ fn comfy_table(
 }
 
 impl TableFormat {
-    pub fn format(&self, lua: &Lua, tbl: &LuaTable, colorize: bool) -> LuaResult<String> {
+    pub fn format(&self, tbl: &LuaTable, colorize: bool) -> LuaResult<String> {
         match self {
             TableFormat::Address => {
                 if colorize {
@@ -117,20 +79,7 @@ impl TableFormat {
                 }
             }
             TableFormat::Inspect => {
-                if let Some(inspect) = lua.globals().get::<Option<LuaTable>>("_inspect")? {
-                    let out = inspect.call::<String>(tbl)?;
-
-                    if colorize {
-                        Ok(LuaHighlighter::new().highlight(&out, 0).render_simple())
-                    } else {
-                        Ok(out)
-                    }
-                } else {
-                    let inspect: LuaTable = lua.load(INSPECT_CODE).eval()?;
-                    lua.globals().set("_inspect", inspect)?;
-
-                    self.format(lua, tbl, colorize)
-                }
+                display_table(tbl, colorize).map_err(|e| LuaError::ExternalError(Arc::new(e)))
             }
             TableFormat::ComfyTable(recursive) => {
                 let mut visited = HashMap::new();

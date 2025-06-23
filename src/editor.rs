@@ -5,10 +5,7 @@ use reedline::{
 };
 
 use crate::{
-    format::TableFormat,
-    highlight::LuaHighlighter,
-    inspect::{display_basic, display_table},
-    validator::LuaValidator,
+    format::TableFormat, highlight::LuaHighlighter, inspect::display_basic, validator::LuaValidator,
 };
 
 pub struct Editor {
@@ -118,7 +115,7 @@ impl Editor {
         let value: LuaValue = self.lua.load(line).set_name("=stdin").eval()?;
 
         let stringify = match value {
-            LuaValue::Table(tbl) => display_table(&tbl, true).unwrap(), //  self.table_format.format(&self.lua, &tbl, true)?,
+            LuaValue::Table(tbl) => self.table_format.format(&tbl, true)?,
             value => display_basic(&value, true),
         };
 
