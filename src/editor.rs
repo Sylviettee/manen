@@ -1,8 +1,17 @@
-use mlua::prelude::*;
+use std::{
+    process,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
+
+use mlua::{HookTriggers, prelude::*};
 use reedline::{
     DefaultPrompt, DefaultPromptSegment, EditCommand, Emacs, KeyCode, KeyModifiers, Reedline,
     ReedlineEvent, Signal, default_emacs_keybindings,
 };
+use tokio::{signal, task};
 
 use crate::{
     format::TableFormat, highlight::LuaHighlighter, inspect::display_basic, validator::LuaValidator,
@@ -14,12 +23,26 @@ pub struct Editor {
     lua: Lua,
 
     table_format: TableFormat,
+    cancel_lua: Arc<AtomicBool>,
 }
 
 impl Editor {
     pub fn new() -> LuaResult<Self> {
         let lua = Lua::new();
         let version: String = lua.globals().get("_VERSION")?;
+
+        let cancel_lua = Arc::new(AtomicBool::new(false));
+
+        let inner_cancel = cancel_lua.clone();
+        lua.set_hook(HookTriggers::EVERY_LINE, move |_lua, _debug| {
+            if inner_cancel.load(Ordering::Relaxed) {
+                inner_cancel.store(false, Ordering::Relaxed);
+
+                return Err(LuaError::runtime("cancelled"));
+            }
+
+            Ok(LuaVmState::Continue)
+        });
 
         let prompt = DefaultPrompt::new(
             DefaultPromptSegment::Basic(version),
@@ -45,10 +68,31 @@ impl Editor {
             lua,
 
             table_format: TableFormat::ComfyTable(true),
+            cancel_lua,
         })
     }
 
-    pub fn run(mut self) {
+    fn register_ctrl_c(&self, is_running_lua: Arc<AtomicBool>) {
+        let inner_cancel = self.cancel_lua.clone();
+
+        tokio::spawn(async move {
+            loop {
+                signal::ctrl_c().await.unwrap();
+
+                if is_running_lua.load(Ordering::Relaxed) {
+                    inner_cancel.store(true, Ordering::Relaxed);
+                } else {
+                    process::exit(0)
+                }
+            }
+        });
+    }
+
+    pub async fn run(mut self) {
+        let is_running_lua = Arc::new(AtomicBool::new(false));
+
+        self.register_ctrl_c(is_running_lua.clone());
+
         loop {
             let signal = self.editor.read_line(&self.prompt);
 
@@ -62,9 +106,21 @@ impl Editor {
                         continue;
                     }
 
-                    if let Err(e) = self.eval(&line) {
+                    is_running_lua.store(true, Ordering::Relaxed);
+
+                    let line = line.clone();
+                    let lua = self.lua.clone();
+                    let table_format = self.table_format;
+
+                    if let Err(e) =
+                        task::spawn_blocking(move || Self::eval(lua, table_format, &line))
+                            .await
+                            .unwrap()
+                    {
                         eprintln!("{e}")
                     }
+
+                    is_running_lua.store(false, Ordering::Relaxed);
                 }
                 //  TODO; this should cancel the current Lua execution if possible
                 Ok(Signal::CtrlC) | Ok(Signal::CtrlD) => break,
@@ -111,11 +167,11 @@ impl Editor {
         Ok(())
     }
 
-    fn eval(&mut self, line: &str) -> LuaResult<()> {
-        let value: LuaValue = self.lua.load(line).set_name("=stdin").eval()?;
+    fn eval(lua: Lua, table_format: TableFormat, line: &str) -> LuaResult<()> {
+        let value: LuaValue = lua.load(line).set_name("=stdin").eval()?;
 
         let stringify = match value {
-            LuaValue::Table(tbl) => self.table_format.format(&tbl, true)?,
+            LuaValue::Table(tbl) => table_format.format(&tbl, true)?,
             value => display_basic(&value, true),
         };
 

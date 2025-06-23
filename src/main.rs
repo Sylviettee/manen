@@ -1,6 +1,4 @@
 use std::{
-    fs,
-    io::{self, Read},
     path::{Path, PathBuf},
     process,
 };
@@ -10,6 +8,10 @@ use editor::Editor;
 use highlight::LuaHighlighter;
 use mlua::prelude::*;
 use reedline::Highlighter;
+use tokio::{
+    fs,
+    io::{AsyncReadExt, stdin},
+};
 
 use crate::{format::comfy_table, inspect::inspect};
 
@@ -33,13 +35,13 @@ enum Command {
     Repl,
     /// Run a Lua file
     Run {
-        /// Path to Lua file 
-        path: PathBuf
+        /// Path to Lua file
+        path: PathBuf,
     },
     /// Highlight a Lua file
     Highlight {
         /// Path to Lua file (default: stdin)
-        path: Option<PathBuf>
+        path: Option<PathBuf>,
     },
 }
 
@@ -84,22 +86,23 @@ fn eval_lua(file: String, path: &Path) -> LuaResult<()> {
     }
 }
 
-fn main() -> color_eyre::Result<()> {
+#[tokio::main]
+async fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
 
     let cli = Cli::parse();
 
     match &cli.command {
-        None | Some(Command::Repl) => Editor::new()?.run(),
+        None | Some(Command::Repl) => Editor::new()?.run().await,
         Some(Command::Run { path }) => {
-            eval_lua(fs::read_to_string(path)?, path)?;
+            eval_lua(fs::read_to_string(path).await?, path)?;
         }
         Some(Command::Highlight { path }) => {
             let file = if let Some(path) = path {
-                fs::read_to_string(path)?
+                fs::read_to_string(path).await?
             } else {
                 let mut buffer = String::new();
-                io::stdin().read_to_string(&mut buffer)?;
+                stdin().read_to_string(&mut buffer).await?;
 
                 buffer
             };

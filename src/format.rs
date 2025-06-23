@@ -6,6 +6,7 @@ use nu_ansi_term::Color;
 
 use crate::inspect::{display_basic, display_table, is_short_printable, print_array};
 
+#[derive(Clone, Copy)]
 pub enum TableFormat {
     ComfyTable(bool),
     Inspect,
