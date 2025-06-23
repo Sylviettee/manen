@@ -16,11 +16,12 @@ impl LuaValidator {
     }
 
     fn burner_lua() -> Lua {
-        let lua = Lua::new_with(
-            LuaStdLib::MATH | LuaStdLib::STRING | LuaStdLib::UTF8,
-            LuaOptions::new(),
-        )
-        .unwrap();
+        #[cfg(any(feature = "lua54", feature = "lua53"))]
+        let flags = LuaStdLib::MATH | LuaStdLib::STRING | LuaStdLib::UTF8;
+        #[cfg(not(any(feature = "lua54", feature = "lua53")))]
+        let flags = LuaStdLib::MATH | LuaStdLib::STRING;
+
+        let lua = Lua::new_with(flags, LuaOptions::new()).unwrap();
 
         let math: LuaTable = lua.globals().get("math").unwrap();
 
