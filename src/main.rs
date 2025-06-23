@@ -29,9 +29,18 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Enter an interactive REPL session
     Repl,
-    Run { path: PathBuf },
-    Highlight { path: Option<PathBuf> },
+    /// Run a Lua file
+    Run {
+        /// Path to Lua file 
+        path: PathBuf
+    },
+    /// Highlight a Lua file
+    Highlight {
+        /// Path to Lua file (default: stdin)
+        path: Option<PathBuf>
+    },
 }
 
 fn eval_lua(file: String, path: &Path) -> LuaResult<()> {
