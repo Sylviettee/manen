@@ -5,9 +5,7 @@ use reedline::{
 };
 
 use crate::{
-    format::{TableFormat, lua_to_string},
-    highlight::LuaHighlighter,
-    validator::LuaValidator,
+    format::TableFormat, highlight::LuaHighlighter, inspect::rewrite_types, validator::LuaValidator,
 };
 
 pub struct Editor {
@@ -118,7 +116,7 @@ impl Editor {
 
         let stringify = match value {
             LuaValue::Table(tbl) => self.table_format.format(&self.lua, &tbl, true)?,
-            value => lua_to_string(&value)?,
+            value => rewrite_types(&value, true),
         };
 
         // TODO; colorize

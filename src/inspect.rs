@@ -1,6 +1,7 @@
 use aho_corasick::AhoCorasick;
 use lazy_static::lazy_static;
 use mlua::prelude::*;
+use nu_ansi_term::{AnsiString, AnsiStrings, Color};
 
 lazy_static! {
     static ref AC_REPLACEMENTS: (AhoCorasick, Vec<String>) = {
@@ -34,12 +35,23 @@ lazy_static! {
         (AhoCorasick::new(escapes).unwrap(), replacements)
     };
     static ref ESCAPER: &'static AhoCorasick = &AC_REPLACEMENTS.0;
+    static ref REPLACEMENT_COLOR: Vec<String> = AC_REPLACEMENTS
+        .1
+        .iter()
+        .map(|s| Color::Cyan.paint(s).to_string())
+        .collect();
 }
 
 fn escape_control(s: &str) -> String {
     ESCAPER
         .replace_all(s, &AC_REPLACEMENTS.1)
         .replace("\\\\x", "\\x")
+}
+
+fn escape_control_color(s: &str) -> String {
+    ESCAPER
+        .replace_all(s, &REPLACEMENT_COLOR)
+        .replace("\\\\x", &Color::Cyan.paint("\\x").to_string())
 }
 
 fn remove_invalid(mut bytes: &[u8]) -> String {
@@ -77,4 +89,67 @@ fn remove_invalid(mut bytes: &[u8]) -> String {
 
 pub fn cleanup_string(lua_str: &LuaString) -> String {
     escape_control(&remove_invalid(&lua_str.as_bytes()))
+}
+
+fn format_string(lua_str: &LuaString, colorize: bool) -> String {
+    let mut s = remove_invalid(&lua_str.as_bytes());
+
+    if colorize {
+        s = escape_control_color(&s);
+    } else {
+        s = escape_control(&s);
+    }
+
+    let pair = (s.contains("'"), s.contains('"'));
+
+    match pair {
+        (true, true) => format!("\"{}\"", s.replace("\"", "\\\"")),
+        (false, true) => format!("'{s}'"),
+        (true, false) | (false, false) => format!("\"{s}\""),
+    }
+}
+
+fn addr_color(val: &LuaValue) -> Option<(String, Color)> {
+    match val {
+        LuaValue::LightUserData(l) => Some((format!("{:?}", l.0), Color::Cyan)),
+        LuaValue::Table(t) => Some((format!("{:?}", t.to_pointer()), Color::LightBlue)),
+        LuaValue::Function(f) => Some((format!("{:?}", f.to_pointer()), Color::Purple)),
+        LuaValue::Thread(t) => Some((format!("{:?}", t.to_pointer()), Color::LightGray)),
+        LuaValue::UserData(u) => Some((format!("{:?}", u.to_pointer()), Color::Cyan)),
+        _ => None,
+    }
+}
+
+fn handle_strings<'a>(colorize: bool, strings: AnsiStrings<'a>) -> String {
+    if colorize {
+        strings.to_string()
+    } else {
+        nu_ansi_term::unstyle(&strings)
+    }
+}
+
+pub fn rewrite_types(val: &LuaValue, colorize: bool) -> String {
+    match addr_color(val) {
+        Some((addr, color)) => {
+            let strings: &[AnsiString<'static>] = &[
+                color.paint(val.type_name()),
+                Color::Default.paint("@"),
+                Color::LightYellow.paint(addr),
+            ];
+
+            handle_strings(colorize, AnsiStrings(strings))
+        }
+        None => {
+            let strings = &[match val {
+                LuaValue::Nil => Color::LightRed.paint("nil"),
+                LuaValue::Boolean(b) => Color::LightYellow.paint(b.to_string()),
+                LuaValue::Integer(i) => Color::LightYellow.paint(i.to_string()),
+                LuaValue::Number(n) => Color::LightYellow.paint(n.to_string()),
+                LuaValue::String(s) => Color::Green.paint(format_string(s, colorize)),
+                val => Color::LightGray.paint(val.to_string().unwrap_or_default()),
+            }];
+
+            handle_strings(colorize, AnsiStrings(strings))
+        }
+    }
 }

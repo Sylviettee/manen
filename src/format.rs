@@ -5,7 +5,7 @@ use mlua::prelude::*;
 use nu_ansi_term::Color;
 use reedline::Highlighter;
 
-use crate::{highlight::LuaHighlighter, inspect::cleanup_string};
+use crate::{highlight::LuaHighlighter, inspect::rewrite_types};
 
 const INSPECT_CODE: &str = include_str!("inspect.lua");
 
@@ -13,18 +13,6 @@ pub enum TableFormat {
     ComfyTable(bool),
     Inspect,
     Address,
-}
-
-fn addr_tbl(tbl: &LuaTable) -> String {
-    format!("table@{:?}", tbl.to_pointer())
-}
-
-pub fn lua_to_string(value: &LuaValue) -> LuaResult<String> {
-    match value {
-        LuaValue::String(string) => Ok(cleanup_string(string)),
-        LuaValue::Table(tbl) => Ok(addr_tbl(tbl)),
-        value => value.to_string(),
-    }
 }
 
 fn is_array(tbl: &LuaTable) -> LuaResult<(bool, bool)> {
@@ -48,38 +36,38 @@ fn is_array(tbl: &LuaTable) -> LuaResult<(bool, bool)> {
     Ok((is_arr, has_table))
 }
 
-fn print_array(tbl: &LuaTable) -> LuaResult<String> {
+fn print_array(tbl: &LuaTable) -> String {
     let mut buff = Vec::new();
 
     for (_, value) in tbl.pairs::<LuaValue, LuaValue>().flatten() {
         if let LuaValue::Table(inner) = value {
-            buff.push(print_array(&inner)?);
+            buff.push(print_array(&inner));
         } else {
-            buff.push(lua_to_string(&value)?);
+            buff.push(rewrite_types(&value, true));
         }
     }
 
-    Ok(format!("{{ {} }}", buff.join(", ")))
+    format!("{{ {} }}", buff.join(", "))
 }
 
 fn comfy_table(
     tbl: &LuaTable,
     recursive: bool,
-    visited: &mut HashMap<String, usize>,
+    visited: &mut HashMap<usize, usize>,
 ) -> LuaResult<String> {
-    let addr = addr_tbl(tbl);
+    let addr = tbl.to_pointer() as usize;
 
     if let Some(id) = visited.get(&addr) {
         return Ok(format!("<table {id}>"));
     }
 
     let id = visited.len();
-    visited.insert(addr.clone(), id);
+    visited.insert(addr, id);
 
     let (is_array, has_table) = is_array(tbl)?;
 
     if is_array && !has_table {
-        return print_array(tbl);
+        return Ok(print_array(tbl));
     }
 
     let mut table = Table::new();
@@ -89,12 +77,18 @@ fn comfy_table(
     for (key, value) in tbl.pairs::<LuaValue, LuaValue>().flatten() {
         let (key_str, value_str) = if let LuaValue::Table(sub) = value {
             if recursive {
-                (lua_to_string(&key)?, comfy_table(&sub, recursive, visited)?)
+                (
+                    rewrite_types(&key, false),
+                    comfy_table(&sub, recursive, visited)?,
+                )
             } else {
-                (lua_to_string(&key)?, addr.clone())
+                (
+                    rewrite_types(&key, false),
+                    rewrite_types(&LuaValue::Table(sub), false),
+                )
             }
         } else {
-            (lua_to_string(&key)?, lua_to_string(&value)?)
+            (rewrite_types(&key, false), rewrite_types(&value, false))
         };
 
         table.add_row(vec![key_str, value_str]);
