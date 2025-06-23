@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Write},
+    sync::Arc,
 };
 
 use aho_corasick::AhoCorasick;
@@ -144,8 +145,8 @@ fn format_string(lua_str: &LuaString, colorize: bool) -> String {
     }
 }
 
-fn addr_color(val: &LuaValue) -> Option<(String, Color)> {
-    match val {
+fn addr_color(value: &LuaValue) -> Option<(String, Color)> {
+    match value {
         LuaValue::LightUserData(l) => Some((format!("{:?}", l.0), Color::Cyan)),
         LuaValue::Table(t) => Some((format!("{:?}", t.to_pointer()), Color::LightBlue)),
         LuaValue::Function(f) => Some((format!("{:?}", f.to_pointer()), Color::Purple)),
@@ -163,11 +164,11 @@ fn handle_strings<'a>(colorize: bool, strings: AnsiStrings<'a>) -> String {
     }
 }
 
-pub fn display_basic(val: &LuaValue, colorize: bool) -> String {
-    match addr_color(val) {
+pub fn display_basic(value: &LuaValue, colorize: bool) -> String {
+    match addr_color(value) {
         Some((addr, color)) => {
             let strings: &[AnsiString<'static>] = &[
-                color.paint(val.type_name()),
+                color.paint(value.type_name()),
                 Color::Default.paint("@"),
                 Color::LightYellow.paint(addr),
             ];
@@ -175,7 +176,7 @@ pub fn display_basic(val: &LuaValue, colorize: bool) -> String {
             handle_strings(colorize, AnsiStrings(strings))
         }
         None => {
-            let strings = &[match val {
+            let strings = &[match value {
                 LuaValue::Nil => Color::LightRed.paint("nil"),
                 LuaValue::Boolean(b) => Color::LightYellow.paint(b.to_string()),
                 LuaValue::Integer(i) => Color::LightYellow.paint(i.to_string()),
@@ -239,7 +240,7 @@ pub fn is_short_printable(tbl: &LuaTable) -> bool {
     is_short_printable_inner(tbl, &mut seen)
 }
 
-pub fn print_array(tbl: &LuaTable) -> String {
+pub fn print_array(tbl: &LuaTable, colorize: bool) -> String {
     let mut buff = Vec::new();
 
     if tbl.is_empty() {
@@ -248,9 +249,9 @@ pub fn print_array(tbl: &LuaTable) -> String {
 
     for (_, value) in tbl.pairs::<LuaValue, LuaValue>().flatten() {
         if let LuaValue::Table(inner) = value {
-            buff.push(print_array(&inner));
+            buff.push(print_array(&inner, colorize));
         } else {
-            buff.push(display_basic(&value, true));
+            buff.push(display_basic(&value, colorize));
         }
     }
 
@@ -307,7 +308,7 @@ fn display_table_inner(
     let printable = is_short_printable(tbl);
 
     if printable {
-        return Ok(print_array(tbl));
+        return Ok(print_array(tbl, colorize));
     }
 
     let mut buffer = String::new();
@@ -350,4 +351,13 @@ pub fn display_table(tbl: &LuaTable, colorize: bool) -> Result<String, fmt::Erro
     let mut seen = HashMap::new();
 
     display_table_inner(tbl, colorize, &mut seen, 0)
+}
+
+pub fn inspect(value: &LuaValue, colorize: bool) -> LuaResult<String> {
+    match value {
+        LuaValue::Table(tbl) => {
+            display_table(tbl, colorize).map_err(|e| LuaError::ExternalError(Arc::new(e)))
+        }
+        value => Ok(display_basic(value, colorize)),
+    }
 }

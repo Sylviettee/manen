@@ -12,7 +12,7 @@ pub enum TableFormat {
     Address,
 }
 
-fn comfy_table(
+fn comfy_table_inner(
     tbl: &LuaTable,
     recursive: bool,
     visited: &mut HashMap<usize, usize>,
@@ -29,7 +29,7 @@ fn comfy_table(
     let printable = is_short_printable(tbl);
 
     if printable {
-        return Ok(print_array(tbl));
+        return Ok(print_array(tbl, false));
     }
 
     let mut table = Table::new();
@@ -41,7 +41,7 @@ fn comfy_table(
             if recursive {
                 (
                     display_basic(&key, false),
-                    comfy_table(&sub, recursive, visited)?,
+                    comfy_table_inner(&sub, recursive, visited)?,
                 )
             } else {
                 (
@@ -63,6 +63,11 @@ fn comfy_table(
     }
 }
 
+pub fn comfy_table(tbl: &LuaTable, recursive: bool) -> LuaResult<String> {
+    let mut visited = HashMap::new();
+    comfy_table_inner(tbl, recursive, &mut visited)
+}
+
 impl TableFormat {
     pub fn format(&self, tbl: &LuaTable, colorize: bool) -> LuaResult<String> {
         match self {
@@ -81,10 +86,7 @@ impl TableFormat {
             TableFormat::Inspect => {
                 display_table(tbl, colorize).map_err(|e| LuaError::ExternalError(Arc::new(e)))
             }
-            TableFormat::ComfyTable(recursive) => {
-                let mut visited = HashMap::new();
-                comfy_table(tbl, *recursive, &mut visited)
-            }
+            TableFormat::ComfyTable(recursive) => comfy_table(tbl, *recursive),
         }
     }
 }

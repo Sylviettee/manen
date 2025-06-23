@@ -119,7 +119,6 @@ impl Editor {
             value => display_basic(&value, true),
         };
 
-        // TODO; colorize
         println!("{stringify}");
 
         Ok(())

@@ -1,13 +1,16 @@
 use std::{
     fs,
     io::{self, Read},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use clap::{Parser, Subcommand};
 use editor::Editor;
 use highlight::LuaHighlighter;
+use mlua::prelude::*;
 use reedline::Highlighter;
+
+use crate::{format::comfy_table, inspect::inspect};
 
 mod editor;
 mod format;
@@ -25,15 +28,50 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    Repl,
+    Repl { path: Option<PathBuf> },
     Highlight { path: Option<PathBuf> },
 }
 
+fn eval_lua(file: String, path: &Path) -> LuaResult<()> {
+    let lua = Lua::new();
+    let globals = lua.globals();
+
+    globals.raw_set(
+        "inspect",
+        lua.create_function(|_, (value, colorize): (LuaValue, Option<bool>)| {
+            println!("{}", inspect(&value, colorize.unwrap_or(true))?);
+            Ok(())
+        })?,
+    )?;
+
+    globals.raw_set(
+        "comfytable",
+        lua.create_function(|_, (table, recursive): (LuaTable, Option<bool>)| {
+            println!("{}", comfy_table(&table, recursive.unwrap_or(true))?);
+
+            Ok(())
+        })?,
+    )?;
+
+    lua.load(file)
+        .set_name(format!("@{}", path.to_string_lossy()))
+        .eval()
+}
+
 fn main() -> color_eyre::Result<()> {
+    color_eyre::install()?;
+
     let cli = Cli::parse();
 
     match &cli.command {
-        None | Some(Command::Repl) => Editor::new()?.run(),
+        None => Editor::new()?.run(),
+        Some(Command::Repl { path }) => {
+            if let Some(path) = path {
+                eval_lua(fs::read_to_string(path)?, path)?;
+            } else {
+                Editor::new()?.run()
+            }
+        }
         Some(Command::Highlight { path }) => {
             let file = if let Some(path) = path {
                 fs::read_to_string(path)?
