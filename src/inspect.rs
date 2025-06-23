@@ -347,17 +347,16 @@ fn display_table_inner(
     Ok(buffer)
 }
 
-pub fn display_table(tbl: &LuaTable, colorize: bool) -> Result<String, fmt::Error> {
+pub fn display_table(tbl: &LuaTable, colorize: bool) -> LuaResult<String> {
     let mut seen = HashMap::new();
 
     display_table_inner(tbl, colorize, &mut seen, 0)
+        .map_err(|e| LuaError::ExternalError(Arc::new(e)))
 }
 
 pub fn inspect(value: &LuaValue, colorize: bool) -> LuaResult<String> {
     match value {
-        LuaValue::Table(tbl) => {
-            display_table(tbl, colorize).map_err(|e| LuaError::ExternalError(Arc::new(e)))
-        }
+        LuaValue::Table(tbl) => display_table(tbl, colorize),
         value => Ok(display_basic(value, colorize)),
     }
 }
