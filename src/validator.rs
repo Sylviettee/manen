@@ -2,6 +2,8 @@ use mlua::prelude::*;
 use nu_ansi_term::{Color, Style};
 use reedline::{Hinter, History, ValidationResult, Validator};
 
+use crate::inspect::display_basic;
+
 pub struct LuaValidator {
     lua: Lua,
     hint: String,
@@ -15,6 +17,7 @@ impl LuaValidator {
         }
     }
 
+    // this is a really bad way of doing things
     fn burner_lua() -> Lua {
         #[cfg(any(feature = "lua54", feature = "lua53"))]
         let flags = LuaStdLib::MATH | LuaStdLib::STRING | LuaStdLib::UTF8;
@@ -23,8 +26,12 @@ impl LuaValidator {
 
         let lua = Lua::new_with(flags, LuaOptions::new()).unwrap();
 
-        let math: LuaTable = lua.globals().get("math").unwrap();
+        let globals = lua.globals();
+        globals.raw_remove("print").unwrap();
+        globals.raw_remove("loadfile").unwrap();
+        globals.raw_remove("load").unwrap();
 
+        let math: LuaTable = globals.get("math").unwrap();
         math.raw_remove("random").unwrap();
 
         lua
@@ -87,14 +94,10 @@ impl Hinter for LuaValidator {
             return String::new();
         }
 
-        if let Ok(str) = value.to_string() {
-            self.hint = str.clone();
-            let style = Style::new().fg(Color::DarkGray);
+        self.hint = display_basic(&value, false);
+        let style = Style::new().fg(Color::DarkGray);
 
-            style.paint(format!(" ({str})")).to_string()
-        } else {
-            String::new()
-        }
+        style.paint(format!(" ({})", &self.hint)).to_string()
     }
 
     fn complete_hint(&self) -> String {
