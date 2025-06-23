@@ -11,7 +11,6 @@ use reedline::{
     DefaultPrompt, DefaultPromptSegment, EditCommand, Emacs, KeyCode, KeyModifiers, Reedline,
     ReedlineEvent, Signal, default_emacs_keybindings,
 };
-use tokio::{signal, task};
 
 use crate::{
     format::TableFormat, highlight::LuaHighlighter, inspect::display_basic, validator::LuaValidator,
@@ -75,20 +74,17 @@ impl Editor {
     fn register_ctrl_c(&self, is_running_lua: Arc<AtomicBool>) {
         let inner_cancel = self.cancel_lua.clone();
 
-        tokio::spawn(async move {
-            loop {
-                signal::ctrl_c().await.unwrap();
-
-                if is_running_lua.load(Ordering::Relaxed) {
-                    inner_cancel.store(true, Ordering::Relaxed);
-                } else {
-                    process::exit(0)
-                }
+        ctrlc::set_handler(move || {
+            if is_running_lua.load(Ordering::Relaxed) {
+                inner_cancel.store(true, Ordering::Relaxed);
+            } else {
+                process::exit(0)
             }
-        });
+        })
+        .unwrap();
     }
 
-    pub async fn run(mut self) {
+    pub fn run(mut self) {
         let is_running_lua = Arc::new(AtomicBool::new(false));
 
         self.register_ctrl_c(is_running_lua.clone());
@@ -108,15 +104,7 @@ impl Editor {
 
                     is_running_lua.store(true, Ordering::Relaxed);
 
-                    let line = line.clone();
-                    let lua = self.lua.clone();
-                    let table_format = self.table_format;
-
-                    if let Err(e) =
-                        task::spawn_blocking(move || Self::eval(lua, table_format, &line))
-                            .await
-                            .unwrap()
-                    {
+                    if let Err(e) = self.eval(&line) {
                         eprintln!("{e}")
                     }
 
@@ -167,11 +155,11 @@ impl Editor {
         Ok(())
     }
 
-    fn eval(lua: Lua, table_format: TableFormat, line: &str) -> LuaResult<()> {
-        let value: LuaValue = lua.load(line).set_name("=stdin").eval()?;
+    fn eval(&self, line: &str) -> LuaResult<()> {
+        let value: LuaValue = self.lua.load(line).set_name("=stdin").eval()?;
 
         let stringify = match value {
-            LuaValue::Table(tbl) => table_format.format(&tbl, true)?,
+            LuaValue::Table(tbl) => self.table_format.format(&tbl, true)?,
             value => display_basic(&value, true),
         };
 
