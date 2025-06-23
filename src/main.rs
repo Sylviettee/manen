@@ -2,6 +2,7 @@ use std::{
     fs,
     io::{self, Read},
     path::{Path, PathBuf},
+    process,
 };
 
 use clap::{Parser, Subcommand};
@@ -28,7 +29,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    Repl { path: Option<PathBuf> },
+    Repl,
+    Run { path: PathBuf },
     Highlight { path: Option<PathBuf> },
 }
 
@@ -53,9 +55,24 @@ fn eval_lua(file: String, path: &Path) -> LuaResult<()> {
         })?,
     )?;
 
-    lua.load(file)
+    let res = lua
+        .load(file)
         .set_name(format!("@{}", path.to_string_lossy()))
-        .eval()
+        .eval::<LuaMultiValue>();
+
+    match res {
+        Err(e) => {
+            eprintln!("{e}");
+            process::exit(1);
+        }
+        Ok(values) => {
+            for value in values {
+                println!("{}", inspect(&value, true)?);
+            }
+
+            Ok(())
+        }
+    }
 }
 
 fn main() -> color_eyre::Result<()> {
@@ -64,13 +81,9 @@ fn main() -> color_eyre::Result<()> {
     let cli = Cli::parse();
 
     match &cli.command {
-        None => Editor::new()?.run(),
-        Some(Command::Repl { path }) => {
-            if let Some(path) = path {
-                eval_lua(fs::read_to_string(path)?, path)?;
-            } else {
-                Editor::new()?.run()
-            }
+        None | Some(Command::Repl) => Editor::new()?.run(),
+        Some(Command::Run { path }) => {
+            eval_lua(fs::read_to_string(path)?, path)?;
         }
         Some(Command::Highlight { path }) => {
             let file = if let Some(path) = path {
