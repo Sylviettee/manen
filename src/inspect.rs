@@ -1,3 +1,8 @@
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::{self, Write},
+};
+
 use aho_corasick::AhoCorasick;
 use lazy_static::lazy_static;
 use mlua::prelude::*;
@@ -42,19 +47,45 @@ lazy_static! {
         .iter()
         .map(|s| format!("{}{}", Color::Cyan.paint(s), Color::Green.prefix()))
         .collect();
+    static ref KEYWORDS: HashSet<&'static str> = HashSet::from_iter([
+        "and", "break", "do", "else", "elseif", "end", "else", "false", "for", "function", "goto",
+        "if", "in", "local", "nil", "not", "or", "repeat", "return", "then", "true", "until",
+        "while",
+    ]);
 }
 
 fn escape_control(s: &str) -> String {
     ESCAPER
         .replace_all(s, &AC_REPLACEMENTS.1)
-        .replace("\\\\x", "\\x")
+        .replace("\u{FFFD}", "\\x")
 }
 
 fn escape_control_color(s: &str) -> String {
-    ESCAPER.replace_all(s, &REPLACEMENT_COLOR).replace(
-        "\\\\x",
-        &format!("{}{}", Color::Cyan.paint("\\x"), Color::Green.prefix()),
-    )
+    let s = ESCAPER.replace_all(s, &REPLACEMENT_COLOR);
+    let mut chars = s.chars();
+    let mut new = String::new();
+
+    while let Some(c) = chars.next() {
+        if c != '\u{FFFD}' {
+            new.push(c);
+            continue;
+        }
+
+        let (hex1, hex2) = (chars.next(), chars.next());
+        let escape = format!(
+            "\\x{}{}",
+            hex1.unwrap_or_default(),
+            hex2.unwrap_or_default()
+        );
+
+        new.push_str(&format!(
+            "{}{}",
+            Color::Cyan.paint(escape),
+            Color::Green.prefix()
+        ));
+    }
+
+    new
 }
 
 fn remove_invalid(mut bytes: &[u8]) -> String {
@@ -81,7 +112,8 @@ fn remove_invalid(mut bytes: &[u8]) -> String {
                 };
 
                 for bad_byte in &invalid[..error_len] {
-                    buffer.push_str(&format!("\\x{:X?}", bad_byte));
+                    // this *might* cause some false positives
+                    buffer.push_str(&format!("\u{FFFD}{:X?}", bad_byte));
                 }
 
                 bytes = &invalid[error_len..];
@@ -131,7 +163,7 @@ fn handle_strings<'a>(colorize: bool, strings: AnsiStrings<'a>) -> String {
     }
 }
 
-pub fn rewrite_types(val: &LuaValue, colorize: bool) -> String {
+pub fn display_basic(val: &LuaValue, colorize: bool) -> String {
     match addr_color(val) {
         Some((addr, color)) => {
             let strings: &[AnsiString<'static>] = &[
@@ -155,4 +187,133 @@ pub fn rewrite_types(val: &LuaValue, colorize: bool) -> String {
             handle_strings(colorize, AnsiStrings(strings))
         }
     }
+}
+
+fn is_array(tbl: &LuaTable) -> (bool, bool) {
+    let mut is_arr = true;
+    let mut has_table = false;
+
+    for (key, value) in tbl.pairs::<LuaValue, LuaValue>().flatten() {
+        if !(key.is_integer() || key.is_number()) {
+            is_arr = false;
+        }
+
+        if let LuaValue::Table(inner) = value {
+            let (is_arr, has_tbl) = is_array(&inner);
+
+            if !is_arr || has_tbl {
+                has_table = true;
+            }
+        }
+    }
+
+    (is_arr, has_table)
+}
+
+fn print_array(tbl: &LuaTable) -> String {
+    let mut buff = Vec::new();
+
+    if tbl.is_empty() {
+        return String::from("{}");
+    }
+
+    for (_, value) in tbl.pairs::<LuaValue, LuaValue>().flatten() {
+        if let LuaValue::Table(inner) = value {
+            buff.push(print_array(&inner));
+        } else {
+            buff.push(display_basic(&value, true));
+        }
+    }
+
+    format!("{{ {} }}", buff.join(", "))
+}
+
+fn is_valid_identifier(s: &str) -> bool {
+    if KEYWORDS.contains(s) {
+        return false;
+    }
+
+    let mut chars = s.chars();
+    let first = if let Some(c) = chars.next() {
+        c
+    } else {
+        return false;
+    };
+
+    //  [A-Z_a-z]
+    if !first.is_ascii_alphabetic() && first != '_' {
+        return false;
+    }
+
+    let s = chars.as_str();
+
+    if s.is_empty() {
+        return true;
+    }
+
+    // [A-Z_a-z0-9]
+    if s.find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+        .is_some()
+    {
+        return false;
+    }
+
+    true
+}
+
+fn display_table_inner(
+    tbl: &LuaTable,
+    colorize: bool,
+    seen: &mut HashMap<usize, usize>,
+    indent: usize,
+) -> Result<String, fmt::Error> {
+    let ptr = tbl.to_pointer() as usize;
+    if let Some(id) = seen.get(&ptr) {
+        return Ok(format!("<{id}>"));
+    }
+
+    let id = seen.len();
+    seen.insert(ptr, id);
+
+    let (is_array, has_table) = is_array(tbl);
+
+    if is_array && !has_table {
+        return Ok(print_array(tbl));
+    }
+
+    let mut buffer = String::new();
+
+    buffer.push_str("{\n");
+
+    for (key, value) in tbl.pairs::<LuaValue, LuaValue>().flatten() {
+        buffer.push_str(&("   ".repeat(indent + 1)));
+
+        if let LuaValue::String(ref s) = key {
+            let clean = cleanup_string(s);
+
+            if is_valid_identifier(&clean) {
+                write!(&mut buffer, "{clean} = ")?
+            } else {
+                write!(&mut buffer, "[{}] = ", display_basic(&key, colorize))?
+            }
+        } else {
+            write!(&mut buffer, "[{}] = ", display_basic(&key, colorize))?;
+        }
+
+        if let LuaValue::Table(t) = value {
+            todo!()
+        } else {
+            writeln!(&mut buffer, "{},", display_basic(&value, colorize))?;
+        }
+    }
+
+    write!(&mut buffer, "{}}}", "   ".repeat(indent))?;
+
+    Ok(buffer)
+}
+
+pub fn display_table(tbl: &LuaTable, colorize: bool) -> Result<String, fmt::Error> {
+    let mut seen = HashMap::new();
+
+    display_table_inner(tbl, colorize, &mut seen, 0)
 }

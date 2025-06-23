@@ -5,7 +5,7 @@ use mlua::prelude::*;
 use nu_ansi_term::Color;
 use reedline::Highlighter;
 
-use crate::{highlight::LuaHighlighter, inspect::rewrite_types};
+use crate::{highlight::LuaHighlighter, inspect::display_basic};
 
 const INSPECT_CODE: &str = include_str!("inspect.lua");
 
@@ -43,7 +43,7 @@ fn print_array(tbl: &LuaTable) -> String {
         if let LuaValue::Table(inner) = value {
             buff.push(print_array(&inner));
         } else {
-            buff.push(rewrite_types(&value, true));
+            buff.push(display_basic(&value, true));
         }
     }
 
@@ -78,17 +78,17 @@ fn comfy_table(
         let (key_str, value_str) = if let LuaValue::Table(sub) = value {
             if recursive {
                 (
-                    rewrite_types(&key, false),
+                    display_basic(&key, false),
                     comfy_table(&sub, recursive, visited)?,
                 )
             } else {
                 (
-                    rewrite_types(&key, false),
-                    rewrite_types(&LuaValue::Table(sub), false),
+                    display_basic(&key, false),
+                    display_basic(&LuaValue::Table(sub), false),
                 )
             }
         } else {
-            (rewrite_types(&key, false), rewrite_types(&value, false))
+            (display_basic(&key, false), display_basic(&value, false))
         };
 
         table.add_row(vec![key_str, value_str]);
