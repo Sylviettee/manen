@@ -9,13 +9,14 @@ use std::{
 use directories::ProjectDirs;
 use mlua::prelude::*;
 use reedline::{
-    DefaultPrompt, DefaultPromptSegment, EditCommand, Emacs, FileBackedHistory, KeyCode,
-    KeyModifiers, Reedline, ReedlineEvent, Signal, default_emacs_keybindings,
+    DefaultPrompt, DefaultPromptSegment, EditCommand, Emacs, FileBackedHistory, IdeMenu, KeyCode,
+    KeyModifiers, MenuBuilder, Reedline, ReedlineEvent, ReedlineMenu, Signal,
+    default_emacs_keybindings,
 };
 
 use crate::{
-    format::TableFormat, highlight::LuaHighlighter, hinter::LuaHinter, inspect::display_basic,
-    validator::LuaValidator,
+    completion::LuaCompleter, format::TableFormat, highlight::LuaHighlighter, hinter::LuaHinter,
+    inspect::display_basic, validator::LuaValidator,
 };
 
 pub struct Editor {
@@ -52,16 +53,28 @@ impl Editor {
 
         let mut keybindings = default_emacs_keybindings();
         keybindings.add_binding(
-            KeyModifiers::SHIFT,
+            KeyModifiers::NONE,
+            KeyCode::Tab,
+            ReedlineEvent::UntilFound(vec![
+                ReedlineEvent::Menu(String::from("completion_menu")),
+                ReedlineEvent::MenuNext,
+            ]),
+        );
+        keybindings.add_binding(
+            KeyModifiers::ALT,
             KeyCode::Enter,
             ReedlineEvent::Edit(vec![EditCommand::InsertNewline]),
         );
 
+        let ide_menu = IdeMenu::default().with_name("completion_menu");
+
         let mut editor = Reedline::create()
             .with_highlighter(Box::new(LuaHighlighter::new()))
             .with_validator(Box::new(LuaValidator::new()))
+            .with_completer(Box::new(LuaCompleter::new(lua.clone())))
             .with_hinter(Box::new(LuaHinter))
-            .with_edit_mode(Box::new(Emacs::new(keybindings)));
+            .with_edit_mode(Box::new(Emacs::new(keybindings)))
+            .with_menu(ReedlineMenu::EngineCompleter(Box::new(ide_menu)));
 
         if let Some(proj_dirs) = ProjectDirs::from("gay.gayest", "", "Manen") {
             let history = FileBackedHistory::with_file(256, proj_dirs.data_dir().join("history"));

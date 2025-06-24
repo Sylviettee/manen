@@ -1,4 +1,5 @@
 use mlua::prelude::*;
+use reedline::{Completer, Span, Suggestion};
 use tree_sitter::{Parser, Point, Query, QueryCursor, Range, StreamingIterator, Tree};
 
 #[derive(Debug)]
@@ -19,6 +20,7 @@ pub struct LuaCompleter {
     tree: Tree,
 
     locals_query: Query,
+    identifiers_query: Query,
     scopes: Vec<Scope>,
     text: String,
 }
@@ -39,11 +41,18 @@ impl LuaCompleter {
         )
         .unwrap();
 
+        let identifiers_query = Query::new(
+            &tree_sitter_lua::LANGUAGE.into(),
+            "(identifier) @identifier",
+        )
+        .unwrap();
+
         Self {
             lua,
             parser,
             tree,
             locals_query,
+            identifiers_query,
             scopes: Vec::new(),
             text: String::new(),
         }
@@ -74,8 +83,21 @@ impl LuaCompleter {
         );
         let names = self.locals_query.capture_names();
 
-        let mut scopes: Vec<Scope> = Vec::new();
-        let mut scope_hierarchy: Vec<usize> = Vec::new();
+        let lines = self.text.split("\n").collect::<Vec<_>>();
+
+        let mut scopes: Vec<Scope> = vec![
+            // fallback scope
+            Scope {
+                range: Range {
+                    start_byte: 0,
+                    end_byte: self.text.len(),
+                    start_point: Point::new(0, 0),
+                    end_point: Point::new(lines.len(), lines.last().map_or("", |v| v).len()),
+                },
+                variables: Vec::new(),
+            },
+        ];
+        let mut scope_hierarchy: Vec<usize> = vec![0];
 
         matches.for_each(|m| {
             for capture in m.captures {
@@ -129,13 +151,13 @@ impl LuaCompleter {
         scopes
     }
 
-    fn locals(&self, point: Point) -> Vec<String> {
+    fn locals(&self, position: usize) -> Vec<String> {
         let mut variables = Vec::new();
 
         for scope in self.scopes.iter() {
-            if point > scope.range.start_point && point < scope.range.end_point {
+            if position > scope.range.start_byte && position < scope.range.end_byte {
                 for var in scope.variables.iter() {
-                    if point > var.range.end_point {
+                    if position > var.range.end_byte {
                         variables.push(var.name.clone());
                     }
                 }
@@ -189,8 +211,8 @@ impl LuaCompleter {
     // to summarize, this function is not properly named
     //
     // globals either exist or are an extension of _ENV
-    fn autocomplete_upvalue(&self, query: &str, point: Point) -> Vec<String> {
-        let mut upvalues = self.locals(point);
+    fn autocomplete_upvalue(&self, query: &str, position: usize) -> Vec<String> {
+        let mut upvalues = self.locals(position);
         upvalues.extend(self.globals());
         upvalues.sort();
 
@@ -199,18 +221,70 @@ impl LuaCompleter {
             .filter(|s| s.starts_with(query))
             .collect()
     }
+
+    fn current_identifier(&self, position: usize) -> Option<(Range, String)> {
+        let mut cursor = QueryCursor::new();
+
+        let mut matches = cursor.matches(
+            &self.identifiers_query,
+            self.tree.root_node(),
+            self.text.as_bytes(),
+        );
+
+        while let Some(m) = matches.next() {
+            for capture in m.captures {
+                let text = capture
+                    .node
+                    .utf8_text(self.text.as_bytes())
+                    .unwrap()
+                    .to_string();
+                let range = capture.node.range();
+
+                if position > range.start_byte && position < range.end_byte {
+                    return Some((range, text.to_string()));
+                }
+            }
+        }
+
+        None
+    }
+}
+
+impl Completer for LuaCompleter {
+    fn complete(&mut self, line: &str, pos: usize) -> Vec<Suggestion> {
+        // TODO; proper autocomplete
+        self.refresh_tree(line);
+
+        if let Some((range, current)) = self.current_identifier(pos.saturating_sub(1)) {
+            return self
+                .autocomplete_upvalue(&current, pos)
+                .into_iter()
+                .map(|s| Suggestion {
+                    value: s,
+                    span: Span::new(range.start_byte, range.end_byte),
+                    ..Default::default()
+                })
+                .collect();
+        }
+
+        Vec::new()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn line_to_position(line: usize, text: &str) -> usize {
+        let split = text.split("\n").collect::<Vec<_>>();
+        split[0..line].join("\n").len()
+    }
+
     #[test]
     fn locals() {
         let mut completer = LuaCompleter::new(Lua::new());
 
-        completer.refresh_tree(
-            r#"
+        let text = r#"
         local function foo(a, b)
            -- 2: foo, a, b
            print(a, b)
@@ -224,27 +298,28 @@ mod tests {
         end
 
         -- 13: foo, bar
-        "#,
-        );
+        "#;
+
+        completer.refresh_tree(text);
 
         assert_eq!(
             &["foo", "a", "b"].as_slice(),
-            &completer.locals(Point { row: 2, column: 0 }),
+            &completer.locals(line_to_position(2, text)),
         );
 
         assert_eq!(
             &["foo"].as_slice(),
-            &completer.locals(Point { row: 6, column: 0 }),
+            &completer.locals(line_to_position(6, text)),
         );
 
         assert_eq!(
             &["foo", "bar", "c"].as_slice(),
-            &completer.locals(Point { row: 9, column: 0 }),
+            &completer.locals(line_to_position(9, text)),
         );
 
         assert_eq!(
             &["foo", "bar"].as_slice(),
-            &completer.locals(Point { row: 13, column: 0 }),
+            &completer.locals(line_to_position(13, text)),
         );
     }
 
@@ -255,20 +330,20 @@ mod tests {
 
         let mut completer = LuaCompleter::new(lua);
 
-        completer.refresh_tree(
-            r#"
+        let text = r#"
         local function foo(a, fooing)
             local foobaz = 3
             -- 3: foo, foobar, fooing, foobaz
         end
-        "#,
-        );
+        "#;
+
+        completer.refresh_tree(text);
 
         assert_eq!(
             &["foo", "foobar", "foobaz", "fooing"]
                 .map(|s| s.to_string())
                 .as_slice(),
-            &completer.autocomplete_upvalue("foo", Point { row: 3, column: 0 })
+            &completer.autocomplete_upvalue("foo", line_to_position(3, text))
         );
     }
 }
