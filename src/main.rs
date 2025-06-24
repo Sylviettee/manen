@@ -11,8 +11,10 @@ use highlight::LuaHighlighter;
 use mlua::prelude::*;
 use reedline::Highlighter;
 
-use crate::{format::comfy_table, inspect::inspect};
+use format::comfy_table;
+use inspect::inspect;
 
+mod completion;
 mod editor;
 mod format;
 mod highlight;
