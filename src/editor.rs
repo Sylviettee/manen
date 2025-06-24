@@ -6,7 +6,7 @@ use std::{
     },
 };
 
-use mlua::{HookTriggers, prelude::*};
+use mlua::prelude::*;
 use reedline::{
     DefaultPrompt, DefaultPromptSegment, EditCommand, Emacs, KeyCode, KeyModifiers, Reedline,
     ReedlineEvent, Signal, default_emacs_keybindings,
@@ -34,7 +34,7 @@ impl Editor {
         let cancel_lua = Arc::new(AtomicBool::new(false));
 
         let inner_cancel = cancel_lua.clone();
-        lua.set_hook(HookTriggers::EVERY_LINE, move |_lua, _debug| {
+        lua.set_hook(LuaHookTriggers::EVERY_LINE, move |_lua, _debug| {
             if inner_cancel.load(Ordering::Relaxed) {
                 inner_cancel.store(false, Ordering::Relaxed);
 

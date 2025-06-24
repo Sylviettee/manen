@@ -20,6 +20,11 @@ fn burner_lua() -> Lua {
     let math: LuaTable = globals.get("math").unwrap();
     math.raw_remove("random").unwrap();
 
+    lua.set_hook(
+        LuaHookTriggers::new().every_nth_instruction(256),
+        |_lua, _debug| Err(LuaError::runtime("timed out")),
+    );
+
     lua
 }
 
