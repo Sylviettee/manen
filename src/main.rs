@@ -7,6 +7,7 @@ use std::{
 
 use clap::{Parser, Subcommand};
 use editor::Editor;
+use emmylua_parser::{LuaParser, ParserConfig};
 use highlight::LuaHighlighter;
 use mlua::prelude::*;
 use reedline::Highlighter;
@@ -14,12 +15,15 @@ use reedline::Highlighter;
 use format::comfy_table;
 use inspect::inspect;
 
+use crate::parse::debug_tree;
+
 mod completion;
 mod editor;
 mod format;
 mod highlight;
 mod hinter;
 mod inspect;
+mod parse;
 mod validator;
 
 #[derive(Parser)]
@@ -44,6 +48,8 @@ enum Command {
         /// Path to Lua file (default: stdin)
         path: Option<PathBuf>,
     },
+    /// DEBUG: Parse a Lua file with emmylua_parser
+    Parse { path: PathBuf },
 }
 
 fn eval_lua(file: String, path: &Path) -> LuaResult<()> {
@@ -111,6 +117,13 @@ fn main() -> color_eyre::Result<()> {
             let text = highlighter.highlight(&file, 0);
 
             println!("{}", text.render_simple());
+        }
+        Some(Command::Parse { path }) => {
+            let code = fs::read_to_string(path)?;
+
+            let tree = LuaParser::parse(&code, ParserConfig::default());
+
+            debug_tree(&tree);
         }
     }
 
