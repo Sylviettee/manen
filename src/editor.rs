@@ -6,10 +6,11 @@ use std::{
     },
 };
 
+use directories::ProjectDirs;
 use mlua::prelude::*;
 use reedline::{
-    DefaultPrompt, DefaultPromptSegment, EditCommand, Emacs, KeyCode, KeyModifiers, Reedline,
-    ReedlineEvent, Signal, default_emacs_keybindings,
+    DefaultPrompt, DefaultPromptSegment, EditCommand, Emacs, FileBackedHistory, KeyCode,
+    KeyModifiers, Reedline, ReedlineEvent, Signal, default_emacs_keybindings,
 };
 
 use crate::{
@@ -56,11 +57,19 @@ impl Editor {
             ReedlineEvent::Edit(vec![EditCommand::InsertNewline]),
         );
 
-        let editor = Reedline::create()
+        let mut editor = Reedline::create()
             .with_highlighter(Box::new(LuaHighlighter::new()))
             .with_validator(Box::new(LuaValidator::new()))
             .with_hinter(Box::new(LuaHinter))
             .with_edit_mode(Box::new(Emacs::new(keybindings)));
+
+        if let Some(proj_dirs) = ProjectDirs::from("gay.gayest", "", "Manen") {
+            let history = FileBackedHistory::with_file(256, proj_dirs.data_dir().join("history"));
+
+            if let Ok(history) = history {
+                editor = editor.with_history(Box::new(history))
+            }
+        }
 
         Ok(Self {
             prompt,
