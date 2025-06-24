@@ -55,12 +55,12 @@ impl LuaCompleter {
         self.scopes = self.resolve_scopes();
     }
 
-    fn globals(&self) -> Vec<LuaValue> {
+    fn globals(&self) -> Vec<String> {
         self.lua
             .globals()
             .pairs()
             .flatten()
-            .map(|(k, _): (LuaValue, LuaValue)| k)
+            .map(|(k, _): (String, LuaValue)| k)
             .collect()
     }
 
@@ -144,6 +144,61 @@ impl LuaCompleter {
 
         variables
     }
+
+    // okay not the correct terminology
+    //
+    // there are 3 kinds of variable
+    // - local (current scope)
+    // - global (_G/_ENV)
+    // - upvalue (local of parent scope(s))
+    //
+    // well in 5.2+ its only local and upvalue since you upvalue _ENV
+    // then you get the individual global variable
+    //
+    // in the code
+    //
+    // ```lua
+    // local a = 1
+    // b = 2
+    //
+    // local function _()
+    //    local c = 3
+    //    print(a, b, c)
+    // end
+    // ```
+    //
+    // the bytecode for the function is
+    //
+    // 1       [5]     LOADI           0 3
+    // 2       [6]     GETTABUP        1 0 0   ; _ENV "print"
+    // 3       [6]     GETUPVAL        2 1     ; a
+    // 4       [6]     GETTABUP        3 0 1   ; _ENV "b"
+    //
+    // the local can be loaded with LOADI (load integer) while a and b
+    // both have to be upvalued
+    //
+    // this is different in 5.1
+    //
+    // 1       [5]     LOADK           0 -1    ; 3
+    // 2       [6]     GETGLOBAL       1 -2    ; print
+    // 3       [6]     GETUPVAL        2 0     ; a
+    // 4       [6]     GETGLOBAL       3 -3    ; b
+    //
+    // in 5.1, globals are treated uniquely and given their own opcode
+    //
+    // to summarize, this function is not properly named
+    //
+    // globals either exist or are an extension of _ENV
+    fn autocomplete_upvalue(&self, query: &str, point: Point) -> Vec<String> {
+        let mut upvalues = self.locals(point);
+        upvalues.extend(self.globals());
+        upvalues.sort();
+
+        upvalues
+            .into_iter()
+            .filter(|s| s.starts_with(query))
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -190,6 +245,30 @@ mod tests {
         assert_eq!(
             &["foo", "bar"].as_slice(),
             &completer.locals(Point { row: 13, column: 0 }),
+        );
+    }
+
+    #[test]
+    fn upvalues() {
+        let lua = Lua::new();
+        lua.globals().set("foobar", "").unwrap();
+
+        let mut completer = LuaCompleter::new(lua);
+
+        completer.refresh_tree(
+            r#"
+        local function foo(a, fooing)
+            local foobaz = 3
+            -- 3: foo, foobar, fooing, foobaz
+        end
+        "#,
+        );
+
+        assert_eq!(
+            &["foo", "foobar", "foobaz", "fooing"]
+                .map(|s| s.to_string())
+                .as_slice(),
+            &completer.autocomplete_upvalue("foo", Point { row: 3, column: 0 })
         );
     }
 }
