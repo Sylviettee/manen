@@ -1,6 +1,6 @@
 use emmylua_parser::{
-    LuaAst, LuaAstNode, LuaKind, LuaParser, LuaSyntaxToken, LuaSyntaxTree, LuaTokenKind,
-    ParserConfig,
+    LuaAst, LuaAstNode, LuaKind, LuaParser, LuaSyntaxKind, LuaSyntaxNode, LuaSyntaxToken,
+    LuaSyntaxTree, LuaTokenKind, ParserConfig,
 };
 use nu_ansi_term::{Color, Style};
 use reedline::StyledText;
@@ -183,7 +183,73 @@ fn default_token_color(token: &LuaSyntaxToken) -> Color {
         }
 
         // EmmyLua
+        LuaTokenKind::TkTagClass
+        | LuaTokenKind::TkTagEnum
+        | LuaTokenKind::TkTagInterface
+        | LuaTokenKind::TkTagAlias
+        | LuaTokenKind::TkTagModule
+        | LuaTokenKind::TkTagField
+        | LuaTokenKind::TkTagType
+        | LuaTokenKind::TkTagParam
+        | LuaTokenKind::TkTagReturn
+        | LuaTokenKind::TkTagOverload
+        | LuaTokenKind::TkTagGeneric
+        | LuaTokenKind::TkTagSee
+        | LuaTokenKind::TkTagDeprecated
+        | LuaTokenKind::TkTagAsync
+        | LuaTokenKind::TkTagCast
+        | LuaTokenKind::TkTagOther
+        | LuaTokenKind::TkTagVisibility
+        | LuaTokenKind::TkTagReadonly
+        | LuaTokenKind::TkTagDiagnostic
+        | LuaTokenKind::TkTagMeta
+        | LuaTokenKind::TkTagVersion
+        | LuaTokenKind::TkTagAs
+        | LuaTokenKind::TkTagNodiscard
+        | LuaTokenKind::TkTagOperator
+        | LuaTokenKind::TkTagMapping
+        | LuaTokenKind::TkTagNamespace
+        | LuaTokenKind::TkTagUsing
+        | LuaTokenKind::TkTagSource
+        | LuaTokenKind::TkTagReturnCast => Color::LightMagenta,
+        LuaTokenKind::TkDocVisibility => Color::Purple,
         _ => Color::DarkGray,
+    }
+}
+
+fn modify_token_color(token: &LuaSyntaxToken, parent: &LuaSyntaxNode) -> Option<Color> {
+    let tk_kind = match token.kind() {
+        LuaKind::Syntax(_) => unreachable!(),
+        LuaKind::Token(kind) => kind,
+    };
+
+    let node_kind = match parent.kind() {
+        LuaKind::Syntax(kind) => kind,
+        LuaKind::Token(_) => unreachable!(),
+    };
+
+    match (tk_kind, node_kind) {
+        (LuaTokenKind::TkName, LuaSyntaxKind::TypeName) => Some(Color::Yellow),
+        (LuaTokenKind::TkName, LuaSyntaxKind::DocTagParam) => Some(Color::Red),
+        (LuaTokenKind::TkName, LuaSyntaxKind::ParamName) => Some(Color::Red),
+        (LuaTokenKind::TkName, _) => {
+            let parent_kind = if let Some(p) = parent.parent() {
+                match p.kind() {
+                    LuaKind::Syntax(kind) => kind,
+                    LuaKind::Token(_) => unreachable!(),
+                }
+            } else {
+                return None;
+            };
+
+            match (node_kind, parent_kind) {
+                (_, LuaSyntaxKind::CallExpr) => Some(Color::Blue),
+                (_, LuaSyntaxKind::LocalFuncStat) => Some(Color::Blue),
+                (LuaSyntaxKind::IndexExpr, LuaSyntaxKind::FuncStat) => Some(Color::Blue),
+                _ => None,
+            }
+        }
+        _ => None,
     }
 }
 
@@ -196,14 +262,21 @@ impl reedline::Highlighter for LuaHighlighter {
 
         let mut text = StyledText::new();
 
+        dbg!(&root);
+
         for token in root
             .descendants_with_tokens()
             .filter_map(|d| d.into_token())
         {
-            text.push((
-                Style::new().fg(default_token_color(&token)),
-                token.text().to_string(),
-            ));
+            let mut color = default_token_color(&token);
+
+            if let Some(parent) = token.parent() {
+                if let Some(new_color) = modify_token_color(&token, &parent) {
+                    color = new_color;
+                }
+            }
+
+            text.push((Style::new().fg(color), token.text().to_string()));
         }
 
         text
