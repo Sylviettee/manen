@@ -253,6 +253,58 @@ fn modify_token_color(token: &LuaSyntaxToken, parent: &LuaSyntaxNode) -> Option<
     }
 }
 
+// this function is rubbish but it works
+fn highlight_string(text: &str) -> StyledText {
+    let mut styled = StyledText::new();
+
+    let mut chars = text.chars();
+    let mut current = String::new();
+
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            current.push(c);
+            continue;
+        }
+
+        styled.push((Style::new().fg(Color::Green), current.clone()));
+        current.clear();
+
+        let modifier = if let Some(c) = chars.next() {
+            c
+        } else {
+            // incomplete string
+            styled.push((Style::new().fg(Color::Cyan), String::from("\\")));
+            break;
+        };
+
+        if modifier == 'x' || modifier == 'X' {
+            let hex1 = chars.next().map(|c| c.to_string()).unwrap_or_default();
+            let hex2 = chars.next().map(|c| c.to_string()).unwrap_or_default();
+
+            styled.push((
+                Style::new().fg(Color::Cyan),
+                format!("\\{modifier}{hex1}{hex2}"),
+            ));
+        } else if modifier == 'u' || modifier == 'U' {
+            for c in chars.by_ref() {
+                current.push(c);
+                if c == '}' {
+                    break;
+                }
+            }
+
+            styled.push((Style::new().fg(Color::Cyan), format!("\\u{current}")));
+            current.clear();
+        } else {
+            styled.push((Style::new().fg(Color::Cyan), format!("\\{modifier}")));
+        }
+    }
+
+    styled.push((Style::new().fg(Color::Green), current.clone()));
+
+    styled
+}
+
 pub struct LuaHighlighter;
 
 impl reedline::Highlighter for LuaHighlighter {
@@ -261,8 +313,6 @@ impl reedline::Highlighter for LuaHighlighter {
         let root = tree.get_red_root();
 
         let mut text = StyledText::new();
-
-        dbg!(&root);
 
         for token in root
             .descendants_with_tokens()
@@ -273,6 +323,18 @@ impl reedline::Highlighter for LuaHighlighter {
             if let Some(parent) = token.parent() {
                 if let Some(new_color) = modify_token_color(&token, &parent) {
                     color = new_color;
+                }
+            }
+
+            match token.kind() {
+                LuaKind::Syntax(_) => unreachable!(),
+                LuaKind::Token(kind) => {
+                    if let LuaTokenKind::TkString = kind {
+                        let styled = highlight_string(token.text());
+
+                        text.buffer.extend(styled.buffer);
+                        continue;
+                    }
                 }
             }
 
