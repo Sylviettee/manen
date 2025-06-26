@@ -8,19 +8,16 @@ use std::{
 use clap::{Parser, Subcommand};
 use editor::Editor;
 use emmylua_parser::{LuaParser, ParserConfig};
-use highlight::LuaHighlighter;
 use mlua::prelude::*;
 use reedline::Highlighter;
 
 use format::comfy_table;
 use inspect::inspect;
-
-use crate::parse::debug_tree;
+use parse::LuaHighlighter;
 
 mod completion;
 mod editor;
 mod format;
-mod highlight;
 mod hinter;
 mod inspect;
 mod parse;
@@ -113,8 +110,7 @@ fn main() -> color_eyre::Result<()> {
                 buffer
             };
 
-            let highlighter = LuaHighlighter::new();
-            let text = highlighter.highlight(&file, 0);
+            let text = LuaHighlighter.highlight(&file, 0);
 
             println!("{}", text.render_simple());
         }
@@ -123,7 +119,7 @@ fn main() -> color_eyre::Result<()> {
 
             let tree = LuaParser::parse(&code, ParserConfig::default());
 
-            debug_tree(&tree);
+            parse::debug_tree(&tree);
         }
     }
 

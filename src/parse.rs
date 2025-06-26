@@ -1,4 +1,9 @@
-use emmylua_parser::{LuaAst, LuaAstNode, LuaSyntaxTree};
+use emmylua_parser::{
+    LuaAst, LuaAstNode, LuaKind, LuaParser, LuaSyntaxToken, LuaSyntaxTree, LuaTokenKind,
+    ParserConfig,
+};
+use nu_ansi_term::{Color, Style};
+use reedline::StyledText;
 use rowan::WalkEvent;
 
 fn node_name(node: &LuaAst) -> Option<&'static str> {
@@ -15,8 +20,8 @@ fn node_name(node: &LuaAst) -> Option<&'static str> {
         LuaAst::LuaWhileStat(_) => Some("while"),
         LuaAst::LuaRepeatStat(_) => Some("repeat"),
         LuaAst::LuaIfStat(_) => Some("if"),
-        LuaAst::LuaForStat(_) => Some("for"),
-        LuaAst::LuaForRangeStat(_) => Some("for_range"),
+        LuaAst::LuaForStat(_) => Some("for_range"),
+        LuaAst::LuaForRangeStat(_) => Some("for"),
         LuaAst::LuaFuncStat(_) => Some("function"),
         LuaAst::LuaLocalFuncStat(_) => Some("local_function"),
         LuaAst::LuaReturnStat(_) => Some("return"),
@@ -45,8 +50,7 @@ fn node_name(node: &LuaAst) -> Option<&'static str> {
 fn should_print_contents(node: &LuaAst) -> bool {
     matches!(
         node,
-        LuaAst::LuaCallExprStat(_)
-            | LuaAst::LuaLabelStat(_)
+        LuaAst::LuaLabelStat(_)
             | LuaAst::LuaGotoStat(_)
             | LuaAst::LuaNameExpr(_)
             | LuaAst::LuaIndexExpr(_)
@@ -96,5 +100,112 @@ pub fn debug_tree(tree: &LuaSyntaxTree) {
                 depth -= 1;
             }
         }
+    }
+}
+
+fn default_token_color(token: &LuaSyntaxToken) -> Color {
+    let kind = match token.kind() {
+        LuaKind::Syntax(_) => unreachable!(),
+        LuaKind::Token(kind) => kind,
+    };
+
+    match kind {
+        LuaTokenKind::TkWhitespace
+        | LuaTokenKind::TkEndOfLine
+        | LuaTokenKind::TkEof
+        | LuaTokenKind::TkUnknown
+        | LuaTokenKind::None => Color::Default,
+
+        LuaTokenKind::TkBreak
+        | LuaTokenKind::TkDo
+        | LuaTokenKind::TkElse
+        | LuaTokenKind::TkElseIf
+        | LuaTokenKind::TkEnd
+        | LuaTokenKind::TkFor
+        | LuaTokenKind::TkFunction
+        | LuaTokenKind::TkGoto
+        | LuaTokenKind::TkIf
+        | LuaTokenKind::TkIn
+        | LuaTokenKind::TkLocal
+        | LuaTokenKind::TkRepeat
+        | LuaTokenKind::TkReturn
+        | LuaTokenKind::TkThen
+        | LuaTokenKind::TkUntil
+        | LuaTokenKind::TkWhile
+        | LuaTokenKind::TkGlobal => Color::Purple,
+
+        LuaTokenKind::TkOr | LuaTokenKind::TkNot | LuaTokenKind::TkAnd => Color::Cyan,
+
+        LuaTokenKind::TkFalse | LuaTokenKind::TkTrue | LuaTokenKind::TkNil => Color::Red,
+
+        LuaTokenKind::TkInt | LuaTokenKind::TkFloat | LuaTokenKind::TkComplex => Color::LightYellow,
+
+        LuaTokenKind::TkPlus
+        | LuaTokenKind::TkMinus
+        | LuaTokenKind::TkMul
+        | LuaTokenKind::TkDiv
+        | LuaTokenKind::TkIDiv
+        | LuaTokenKind::TkDot
+        | LuaTokenKind::TkConcat
+        | LuaTokenKind::TkDots
+        | LuaTokenKind::TkComma
+        | LuaTokenKind::TkAssign
+        | LuaTokenKind::TkEq
+        | LuaTokenKind::TkGe
+        | LuaTokenKind::TkLe
+        | LuaTokenKind::TkNe
+        | LuaTokenKind::TkShl
+        | LuaTokenKind::TkShr
+        | LuaTokenKind::TkLt
+        | LuaTokenKind::TkGt
+        | LuaTokenKind::TkMod
+        | LuaTokenKind::TkPow
+        | LuaTokenKind::TkLen
+        | LuaTokenKind::TkBitAnd
+        | LuaTokenKind::TkBitOr
+        | LuaTokenKind::TkBitXor
+        | LuaTokenKind::TkColon
+        | LuaTokenKind::TkDbColon
+        | LuaTokenKind::TkSemicolon
+        | LuaTokenKind::TkLeftBracket
+        | LuaTokenKind::TkRightBracket
+        | LuaTokenKind::TkLeftParen
+        | LuaTokenKind::TkRightParen
+        | LuaTokenKind::TkLeftBrace
+        | LuaTokenKind::TkRightBrace => Color::LightGray,
+
+        LuaTokenKind::TkName => Color::LightGray,
+
+        LuaTokenKind::TkString | LuaTokenKind::TkLongString => Color::Green,
+
+        LuaTokenKind::TkShortComment | LuaTokenKind::TkLongComment | LuaTokenKind::TkShebang => {
+            Color::DarkGray
+        }
+
+        // EmmyLua
+        _ => Color::DarkGray,
+    }
+}
+
+pub struct LuaHighlighter;
+
+impl reedline::Highlighter for LuaHighlighter {
+    fn highlight(&self, line: &str, _cursor: usize) -> StyledText {
+        let tree = LuaParser::parse(line, ParserConfig::default());
+        let root = tree.get_red_root();
+
+        let mut text = StyledText::new();
+
+        for token in root
+            .descendants_with_tokens()
+            .filter_map(|d| d.into_token())
+        {
+            text.push((
+                Style::new().fg(default_token_color(&token)),
+                token.text().to_string(),
+            ));
+        }
+
+        text
     }
 }

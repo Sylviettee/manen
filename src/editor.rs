@@ -15,8 +15,8 @@ use reedline::{
 };
 
 use crate::{
-    completion::LuaCompleter, format::TableFormat, highlight::LuaHighlighter, hinter::LuaHinter,
-    inspect::display_basic, validator::LuaValidator,
+    completion::LuaCompleter, format::TableFormat, hinter::LuaHinter, inspect::display_basic,
+    parse::LuaHighlighter, validator::LuaValidator,
 };
 
 pub struct Editor {
@@ -69,9 +69,9 @@ impl Editor {
         let ide_menu = IdeMenu::default().with_name("completion_menu");
 
         let mut editor = Reedline::create()
-            .with_highlighter(Box::new(LuaHighlighter::new()))
             .with_validator(Box::new(LuaValidator::new()))
             .with_completer(Box::new(LuaCompleter::new(lua.clone())))
+            .with_highlighter(Box::new(LuaHighlighter))
             .with_hinter(Box::new(LuaHinter))
             .with_edit_mode(Box::new(Emacs::new(keybindings)))
             .with_menu(ReedlineMenu::EngineCompleter(Box::new(ide_menu)));
