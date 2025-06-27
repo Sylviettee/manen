@@ -204,7 +204,7 @@ impl LuaCompleter {
         for identifier in chunk.descendants::<LuaNameExpr>() {
             let range = identifier.get_range();
 
-            if position > range.start().into() && position < range.end().into() {
+            if position >= range.start().into() && position < range.end().into() {
                 if let Some(name) = identifier.get_name_text() {
                     return Some((range, name));
                 } else {
