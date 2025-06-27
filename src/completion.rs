@@ -1,6 +1,5 @@
 use emmylua_parser::{
-    LuaAst, LuaAstNode, LuaAstToken, LuaBlock, LuaClosureExpr, LuaNameExpr, LuaParser,
-    LuaSyntaxTree, ParserConfig,
+    LuaAst, LuaAstNode, LuaAstToken, LuaBlock, LuaNameExpr, LuaParser, LuaSyntaxTree, ParserConfig,
 };
 use mlua::prelude::*;
 use reedline::{Completer, Span, Suggestion};
@@ -125,8 +124,6 @@ impl LuaCompleter {
             });
         }
 
-        dbg!(&scopes);
-
         scopes
     }
 
@@ -202,6 +199,20 @@ impl LuaCompleter {
     }
 
     fn current_identifier(&self, position: u32) -> Option<(TextRange, String)> {
+        let chunk = self.tree.get_chunk_node();
+
+        for identifier in chunk.descendants::<LuaNameExpr>() {
+            let range = identifier.get_range();
+
+            if position > range.start().into() && position < range.end().into() {
+                if let Some(name) = identifier.get_name_text() {
+                    return Some((range, name));
+                } else {
+                    return None;
+                }
+            }
+        }
+
         None
     }
 }
