@@ -1,65 +1,43 @@
+use emmylua_parser::{
+    LuaAst, LuaAstNode, LuaAstToken, LuaBlock, LuaClosureExpr, LuaNameExpr, LuaParser,
+    LuaSyntaxTree, ParserConfig,
+};
 use mlua::prelude::*;
 use reedline::{Completer, Span, Suggestion};
-use tree_sitter::{Parser, Point, Query, QueryCursor, Range, StreamingIterator, Tree};
+use rowan::TextRange;
 
 #[derive(Debug)]
 struct Variable {
-    range: Range,
+    range: TextRange,
     name: String,
 }
 
 #[derive(Debug)]
 struct Scope {
-    range: Range,
+    range: TextRange,
     variables: Vec<Variable>,
 }
 
 pub struct LuaCompleter {
     lua: Lua,
-    parser: Parser,
-    tree: Tree,
+    tree: LuaSyntaxTree,
 
-    locals_query: Query,
-    identifiers_query: Query,
     scopes: Vec<Scope>,
     text: String,
 }
 
 impl LuaCompleter {
     pub fn new(lua: Lua) -> Self {
-        let mut parser = Parser::new();
-
-        parser
-            .set_language(&tree_sitter_lua::LANGUAGE.into())
-            .unwrap();
-
-        let tree = parser.parse("", None).unwrap();
-
-        let locals_query = Query::new(
-            &tree_sitter_lua::LANGUAGE.into(),
-            include_str!("../queries/locals.scm"),
-        )
-        .unwrap();
-
-        let identifiers_query = Query::new(
-            &tree_sitter_lua::LANGUAGE.into(),
-            "(identifier) @identifier",
-        )
-        .unwrap();
-
         Self {
             lua,
-            parser,
-            tree,
-            locals_query,
-            identifiers_query,
+            tree: LuaParser::parse("", ParserConfig::default()),
             scopes: Vec::new(),
             text: String::new(),
         }
     }
 
     fn refresh_tree(&mut self, text: &str) {
-        self.tree = self.parser.parse(text, None).unwrap();
+        self.tree = LuaParser::parse(text, ParserConfig::default());
         self.text = text.to_string();
         self.scopes = self.resolve_scopes();
     }
@@ -74,90 +52,72 @@ impl LuaCompleter {
     }
 
     fn resolve_scopes(&self) -> Vec<Scope> {
-        let mut cursor = QueryCursor::new();
+        let mut scopes = Vec::new();
 
-        let matches = cursor.matches(
-            &self.locals_query,
-            self.tree.root_node(),
-            self.text.as_bytes(),
-        );
-        let names = self.locals_query.capture_names();
+        let chunk = self.tree.get_chunk_node();
 
-        let lines = self.text.split("\n").collect::<Vec<_>>();
+        for scope in chunk.descendants::<LuaBlock>() {
+            let mut variables = Vec::new();
 
-        let mut scopes: Vec<Scope> = vec![
-            // fallback scope
-            Scope {
-                range: Range {
-                    start_byte: 0,
-                    end_byte: self.text.len(),
-                    start_point: Point::new(0, 0),
-                    end_point: Point::new(lines.len(), lines.last().map_or("", |v| v).len()),
-                },
-                variables: Vec::new(),
-            },
-        ];
-        let mut scope_hierarchy: Vec<usize> = vec![0];
-
-        matches.for_each(|m| {
-            for capture in m.captures {
-                let name = names[capture.index as usize];
-                let text = capture
-                    .node
-                    .utf8_text(self.text.as_bytes())
-                    .unwrap()
-                    .to_string();
-                let range = capture.node.range();
-
-                match name {
-                    "local.definition" => {
-                        let last = scope_hierarchy.last().unwrap();
-                        let last_scope = &mut scopes[*last];
-
-                        last_scope.variables.push(Variable { range, name: text });
+            if let Some(LuaAst::LuaClosureExpr(closure)) = scope.get_parent() {
+                if let Some(params) = closure.get_params_list() {
+                    for param in params.get_params() {
+                        if let Some(token) = param.get_name_token() {
+                            variables.push(Variable {
+                                range: param.get_range(),
+                                name: token.get_name_text().to_string(),
+                            });
+                        }
                     }
-                    "local.fn_name" => {
-                        let len = scope_hierarchy.len();
-                        let parent = scope_hierarchy
-                            .get(len - 2)
-                            .unwrap_or_else(|| scope_hierarchy.last().unwrap());
-                        let scope = &mut scopes[*parent];
+                }
+            }
 
-                        scope.variables.push(Variable { range, name: text });
-                    }
-                    "local.scope" => {
-                        let scope = Scope {
-                            range: capture.node.range(),
-                            variables: Vec::new(),
-                        };
+            // TODO; for loops
 
-                        if let Some(last) = scope_hierarchy.last() {
-                            // outside
-                            let last_scope = &scopes[*last];
-
-                            if scope.range.end_byte > last_scope.range.end_byte {
-                                scope_hierarchy.pop();
+            for node in scope.children::<LuaAst>() {
+                match node {
+                    LuaAst::LuaLocalFuncStat(stat) => {
+                        if let Some(name) = stat.get_local_name() {
+                            if let Some(token) = name.get_name_token() {
+                                variables.push(Variable {
+                                    range: token.get_range(),
+                                    name: token.get_name_text().to_string(),
+                                });
                             }
                         }
-
-                        scope_hierarchy.push(scopes.len());
-                        scopes.push(scope);
+                    }
+                    LuaAst::LuaLocalStat(stat) => {
+                        for name in stat.get_local_name_list() {
+                            if let Some(token) = name.get_name_token() {
+                                variables.push(Variable {
+                                    range: stat.get_range(),
+                                    name: token.get_name_text().to_string(),
+                                });
+                            }
+                        }
                     }
                     _ => {}
                 }
             }
-        });
+
+            scopes.push(Scope {
+                range: scope.get_range(),
+                variables,
+            });
+        }
+
+        dbg!(&scopes);
 
         scopes
     }
 
-    fn locals(&self, position: usize) -> Vec<String> {
+    fn locals(&self, position: u32) -> Vec<String> {
         let mut variables = Vec::new();
 
         for scope in self.scopes.iter() {
-            if position > scope.range.start_byte && position < scope.range.end_byte {
+            if position >= scope.range.start().into() && position <= scope.range.end().into() {
                 for var in scope.variables.iter() {
-                    if position > var.range.end_byte {
+                    if position >= var.range.end().into() {
                         variables.push(var.name.clone());
                     }
                 }
@@ -211,7 +171,7 @@ impl LuaCompleter {
     // to summarize, this function is not properly named
     //
     // globals either exist or are an extension of _ENV
-    fn autocomplete_upvalue(&self, query: &str, position: usize) -> Vec<String> {
+    fn autocomplete_upvalue(&self, query: &str, position: u32) -> Vec<String> {
         let mut upvalues = self.locals(position);
         upvalues.extend(self.globals());
         upvalues.sort();
@@ -222,36 +182,14 @@ impl LuaCompleter {
             .collect()
     }
 
-    fn current_identifier(&self, position: usize) -> Option<(Range, String)> {
-        let mut cursor = QueryCursor::new();
-
-        let mut matches = cursor.matches(
-            &self.identifiers_query,
-            self.tree.root_node(),
-            self.text.as_bytes(),
-        );
-
-        while let Some(m) = matches.next() {
-            for capture in m.captures {
-                let text = capture
-                    .node
-                    .utf8_text(self.text.as_bytes())
-                    .unwrap()
-                    .to_string();
-                let range = capture.node.range();
-
-                if position > range.start_byte && position < range.end_byte {
-                    return Some((range, text.to_string()));
-                }
-            }
-        }
-
+    fn current_identifier(&self, position: u32) -> Option<(TextRange, String)> {
         None
     }
 }
 
 impl Completer for LuaCompleter {
     fn complete(&mut self, line: &str, pos: usize) -> Vec<Suggestion> {
+        let pos = pos as u32;
         // TODO; proper autocomplete
         self.refresh_tree(line);
 
@@ -261,7 +199,7 @@ impl Completer for LuaCompleter {
                 .into_iter()
                 .map(|s| Suggestion {
                     value: s,
-                    span: Span::new(range.start_byte, range.end_byte),
+                    span: Span::new(range.start().into(), range.end().into()),
                     ..Default::default()
                 })
                 .collect();
@@ -275,9 +213,9 @@ impl Completer for LuaCompleter {
 mod tests {
     use super::*;
 
-    fn line_to_position(line: usize, text: &str) -> usize {
+    fn line_to_position(line: usize, text: &str) -> u32 {
         let split = text.split("\n").collect::<Vec<_>>();
-        split[0..line].join("\n").len()
+        split[0..line].join("\n").len() as u32
     }
 
     #[test]
