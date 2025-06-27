@@ -59,17 +59,36 @@ impl LuaCompleter {
         for scope in chunk.descendants::<LuaBlock>() {
             let mut variables = Vec::new();
 
-            if let Some(LuaAst::LuaClosureExpr(closure)) = scope.get_parent() {
-                if let Some(params) = closure.get_params_list() {
-                    for param in params.get_params() {
-                        if let Some(token) = param.get_name_token() {
-                            variables.push(Variable {
-                                range: param.get_range(),
-                                name: token.get_name_text().to_string(),
-                            });
+            match scope.get_parent() {
+                Some(LuaAst::LuaClosureExpr(closure)) => {
+                    if let Some(params) = closure.get_params_list() {
+                        for param in params.get_params() {
+                            if let Some(token) = param.get_name_token() {
+                                variables.push(Variable {
+                                    range: param.get_range(),
+                                    name: token.get_name_text().to_string(),
+                                });
+                            }
                         }
                     }
                 }
+                Some(LuaAst::LuaForRangeStat(range)) => {
+                    for token in range.get_var_name_list() {
+                        variables.push(Variable {
+                            range: token.get_range(),
+                            name: token.get_name_text().to_string(),
+                        })
+                    }
+                }
+                Some(LuaAst::LuaForStat(stat)) => {
+                    if let Some(token) = stat.get_var_name() {
+                        variables.push(Variable {
+                            range: token.get_range(),
+                            name: token.get_name_text().to_string(),
+                        });
+                    }
+                }
+                _ => {}
             }
 
             // TODO; for loops
@@ -236,6 +255,20 @@ mod tests {
         end
 
         -- 13: foo, bar
+
+        for i = 1, 10 do
+           -- 16: foo, bar, i
+           print(i)
+        end
+
+        -- 20: foo, bar
+
+        for i, v in pairs(_G) do
+           -- 23: foo, bar, i, v
+           print(i, v)
+        end
+
+        -- 27: foo, bar
         "#;
 
         completer.refresh_tree(text);
@@ -258,6 +291,26 @@ mod tests {
         assert_eq!(
             &["foo", "bar"].as_slice(),
             &completer.locals(line_to_position(13, text)),
+        );
+
+        assert_eq!(
+            &["foo", "bar", "i"].as_slice(),
+            &completer.locals(line_to_position(16, text)),
+        );
+
+        assert_eq!(
+            &["foo", "bar"].as_slice(),
+            &completer.locals(line_to_position(20, text)),
+        );
+
+        assert_eq!(
+            &["foo", "bar", "i", "v"].as_slice(),
+            &completer.locals(line_to_position(23, text)),
+        );
+
+        assert_eq!(
+            &["foo", "bar"].as_slice(),
+            &completer.locals(line_to_position(27, text)),
         );
     }
 
