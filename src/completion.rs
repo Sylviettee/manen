@@ -90,8 +90,6 @@ impl LuaCompleter {
                 _ => {}
             }
 
-            // TODO; for loops
-
             for node in scope.children::<LuaAst>() {
                 match node {
                     LuaAst::LuaLocalFuncStat(stat) => {

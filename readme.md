@@ -7,7 +7,8 @@ Fancy Lua REPl! Featuring support for Lua 5.1-5.4, LuaJIT, and Luau!
 * Syntax highlighting
 * Syntax checking
 * Formatted table outputs
-* Saved REPL history (TODO)
+* Saved REPL history
+* Basic autocomplete
 
 ## Running
 

@@ -133,7 +133,6 @@ impl Editor {
 
                     is_running_lua.store(false, Ordering::Relaxed);
                 }
-                //  TODO; this should cancel the current Lua execution if possible
                 Ok(Signal::CtrlC) | Ok(Signal::CtrlD) => break,
                 _ => {}
             }
