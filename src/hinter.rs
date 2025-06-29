@@ -59,9 +59,7 @@ impl Hinter for LuaHinter {
         let s = format!(" ({})", display_basic(&value, false));
 
         if use_ansi_coloring {
-            Color::DarkGray
-                .paint(s)
-                .to_string()
+            Color::DarkGray.paint(s).to_string()
         } else {
             s
         }

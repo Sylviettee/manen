@@ -15,36 +15,26 @@ use reedline::{
 };
 
 use crate::{
-    completion::LuaCompleter, hinter::LuaHinter, inspect::{display_basic, TableFormat},
-    parse::LuaHighlighter, validator::LuaValidator,
+    completion::LuaCompleter,
+    hinter::LuaHinter,
+    inspect::{TableFormat, display_basic},
+    lua::{LuaExecutor, MluaExecutor},
+    parse::LuaHighlighter,
+    validator::LuaValidator,
 };
 
 pub struct Editor {
     prompt: DefaultPrompt,
     editor: Reedline,
-    lua: Lua,
+    lua_executor: Arc<dyn LuaExecutor>,
 
     table_format: TableFormat,
-    cancel_lua: Arc<AtomicBool>,
 }
 
 impl Editor {
     pub fn new() -> LuaResult<Self> {
-        let lua = Lua::new();
-        let version: String = lua.globals().get("_VERSION")?;
-
-        let cancel_lua = Arc::new(AtomicBool::new(false));
-
-        let inner_cancel = cancel_lua.clone();
-        lua.set_hook(LuaHookTriggers::EVERY_LINE, move |_lua, _debug| {
-            if inner_cancel.load(Ordering::Relaxed) {
-                inner_cancel.store(false, Ordering::Relaxed);
-
-                return Err(LuaError::runtime("cancelled"));
-            }
-
-            Ok(LuaVmState::Continue)
-        });
+        let mlua = Arc::new(MluaExecutor::new());
+        let version: String = mlua.globals().get("_VERSION")?;
 
         let prompt = DefaultPrompt::new(
             DefaultPromptSegment::Basic(version),
@@ -70,7 +60,9 @@ impl Editor {
 
         let mut editor = Reedline::create()
             .with_validator(Box::new(LuaValidator::new()))
-            .with_completer(Box::new(LuaCompleter::new(lua.clone())))
+            .with_completer(Box::new(LuaCompleter::new(
+                mlua.clone() as Arc<dyn LuaExecutor>
+            )))
             .with_highlighter(Box::new(LuaHighlighter))
             .with_hinter(Box::new(LuaHinter))
             .with_edit_mode(Box::new(Emacs::new(keybindings)))
@@ -87,19 +79,18 @@ impl Editor {
         Ok(Self {
             prompt,
             editor,
-            lua,
 
             table_format: TableFormat::ComfyTable(true),
-            cancel_lua,
+            lua_executor: mlua,
         })
     }
 
     fn register_ctrl_c(&self, is_running_lua: Arc<AtomicBool>) {
-        let inner_cancel = self.cancel_lua.clone();
+        let executor = self.lua_executor.clone();
 
         ctrlc::set_handler(move || {
             if is_running_lua.load(Ordering::Relaxed) {
-                inner_cancel.store(true, Ordering::Relaxed);
+                executor.cancel();
             } else {
                 process::exit(0)
             }
@@ -178,7 +169,7 @@ impl Editor {
     }
 
     fn eval(&self, line: &str) -> LuaResult<()> {
-        let value: LuaValue = self.lua.load(line).set_name("=stdin").eval()?;
+        let value: LuaValue = self.lua_executor.exec(line)?;
 
         let stringify = match value {
             LuaValue::Table(tbl) => self.table_format.format(&tbl, true)?,

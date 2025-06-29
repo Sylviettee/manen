@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use emmylua_parser::{
     LuaAst, LuaAstNode, LuaAstToken, LuaBlock, LuaNameExpr, LuaParser, LuaSyntaxTree,
 };
@@ -5,7 +7,7 @@ use mlua::prelude::*;
 use reedline::{Completer, Span, Suggestion};
 use rowan::TextRange;
 
-use crate::parse;
+use crate::{lua::LuaExecutor, parse};
 
 #[derive(Debug)]
 struct Variable {
@@ -20,7 +22,7 @@ struct Scope {
 }
 
 pub struct LuaCompleter {
-    lua: Lua,
+    lua_executor: Arc<dyn LuaExecutor>,
     tree: LuaSyntaxTree,
 
     scopes: Vec<Scope>,
@@ -28,9 +30,9 @@ pub struct LuaCompleter {
 }
 
 impl LuaCompleter {
-    pub fn new(lua: Lua) -> Self {
+    pub fn new(lua_executor: Arc<dyn LuaExecutor>) -> Self {
         Self {
-            lua,
+            lua_executor,
             tree: LuaParser::parse("", parse::config()),
             scopes: Vec::new(),
             text: String::new(),
@@ -44,7 +46,7 @@ impl LuaCompleter {
     }
 
     fn globals(&self) -> Vec<String> {
-        self.lua
+        self.lua_executor
             .globals()
             .pairs()
             .flatten()
@@ -241,7 +243,13 @@ impl Completer for LuaCompleter {
 
 #[cfg(test)]
 mod tests {
+    use crate::lua::MluaExecutor;
+
     use super::*;
+
+    fn lua_executor() -> Arc<dyn LuaExecutor> {
+        Arc::new(MluaExecutor::new())
+    }
 
     fn line_to_position(line: usize, text: &str) -> u32 {
         let split = text.split("\n").collect::<Vec<_>>();
@@ -250,7 +258,7 @@ mod tests {
 
     #[test]
     fn locals() {
-        let mut completer = LuaCompleter::new(Lua::new());
+        let mut completer = LuaCompleter::new(lua_executor());
 
         let text = r#"
         local function foo(a, b)
@@ -327,7 +335,7 @@ mod tests {
 
     #[test]
     fn upvalues() {
-        let lua = Lua::new();
+        let lua = lua_executor();
         lua.globals().set("foobar", "").unwrap();
 
         let mut completer = LuaCompleter::new(lua);

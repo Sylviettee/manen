@@ -5,7 +5,7 @@ use std::{
 };
 
 use aho_corasick::AhoCorasick;
-use comfy_table::{presets::UTF8_FULL_CONDENSED, Table};
+use comfy_table::{Table, presets::UTF8_FULL_CONDENSED};
 use lazy_static::lazy_static;
 use mlua::prelude::*;
 use nu_ansi_term::{AnsiString, AnsiStrings, Color};
@@ -115,7 +115,7 @@ fn remove_invalid(mut bytes: &[u8]) -> String {
 
                 for bad_byte in &invalid[..error_len] {
                     // this *might* cause some false positives
-                    buffer.push_str(&format!("\u{FFFD}{:X?}", bad_byte));
+                    buffer.push_str(&format!("\u{FFFD}{bad_byte:X?}"));
                 }
 
                 bytes = &invalid[error_len..];
