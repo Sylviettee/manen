@@ -1,9 +1,11 @@
 use emmylua_parser::{
-    LuaAst, LuaAstNode, LuaAstToken, LuaBlock, LuaNameExpr, LuaParser, LuaSyntaxTree, ParserConfig,
+    LuaAst, LuaAstNode, LuaAstToken, LuaBlock, LuaNameExpr, LuaParser, LuaSyntaxTree,
 };
 use mlua::prelude::*;
 use reedline::{Completer, Span, Suggestion};
 use rowan::TextRange;
+
+use crate::parse;
 
 #[derive(Debug)]
 struct Variable {
@@ -29,14 +31,14 @@ impl LuaCompleter {
     pub fn new(lua: Lua) -> Self {
         Self {
             lua,
-            tree: LuaParser::parse("", ParserConfig::default()),
+            tree: LuaParser::parse("", parse::config()),
             scopes: Vec::new(),
             text: String::new(),
         }
     }
 
     fn refresh_tree(&mut self, text: &str) {
-        self.tree = LuaParser::parse(text, ParserConfig::default());
+        self.tree = LuaParser::parse(text, parse::config());
         self.text = text.to_string();
         self.scopes = self.resolve_scopes();
     }

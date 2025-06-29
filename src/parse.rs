@@ -1,10 +1,46 @@
 use emmylua_parser::{
-    LuaAst, LuaAstNode, LuaKind, LuaParser, LuaSyntaxKind, LuaSyntaxNode, LuaSyntaxToken,
-    LuaSyntaxTree, LuaTokenKind, ParserConfig,
+    LuaAst, LuaAstNode, LuaKind, LuaLanguageLevel, LuaParser, LuaSyntaxKind, LuaSyntaxNode,
+    LuaSyntaxToken, LuaSyntaxTree, LuaTokenKind, ParserConfig,
 };
 use nu_ansi_term::{Color, Style};
 use reedline::StyledText;
 use rowan::WalkEvent;
+
+#[cfg(feature = "lua54")]
+pub fn config<'cache>() -> ParserConfig<'cache> {
+    ParserConfig::with_level(LuaLanguageLevel::Lua54)
+}
+
+#[cfg(feature = "lua53")]
+pub fn config<'cache>() -> ParserConfig<'cache> {
+    ParserConfig::with_level(LuaLanguageLevel::Lua53)
+}
+
+#[cfg(feature = "lua52")]
+pub fn config<'cache>() -> ParserConfig<'cache> {
+    ParserConfig::with_level(LuaLanguageLevel::Lua52)
+}
+
+#[cfg(feature = "lua51")]
+pub fn config<'cache>() -> ParserConfig<'cache> {
+    ParserConfig::with_level(LuaLanguageLevel::Lua51)
+}
+
+#[cfg(any(feature = "luajit", feature = "luajit52"))]
+pub fn config<'cache>() -> ParserConfig<'cache> {
+    ParserConfig::with_level(LuaLanguageLevel::LuaJIT)
+}
+
+#[cfg(any(feature = "luajit", feature = "luajit52"))]
+pub fn config<'cache>() -> ParserConfig<'cache> {
+    ParserConfig::with_level(LuaLanguageLevel::LuaJIT)
+}
+
+// not entirely accurate but this will do for now
+#[cfg(feature = "luau")]
+pub fn config<'cache>() -> ParserConfig<'cache> {
+    ParserConfig::with_level(LuaLanguageLevel::Lua51)
+}
 
 fn node_name(node: &LuaAst) -> Option<&'static str> {
     match node {
@@ -309,7 +345,7 @@ pub struct LuaHighlighter;
 
 impl reedline::Highlighter for LuaHighlighter {
     fn highlight(&self, line: &str, _cursor: usize) -> StyledText {
-        let tree = LuaParser::parse(line, ParserConfig::default());
+        let tree = LuaParser::parse(line, config());
         let root = tree.get_red_root();
 
         let mut text = StyledText::new();
