@@ -36,7 +36,7 @@ impl Hinter for LuaHinter {
         line: &str,
         _pos: usize,
         _history: &dyn History,
-        _use_ansi_coloring: bool,
+        use_ansi_coloring: bool,
         _cwd: &str,
     ) -> String {
         let lua = burner_lua();
@@ -56,11 +56,15 @@ impl Hinter for LuaHinter {
             return String::new();
         }
 
-        let style = Style::new().fg(Color::DarkGray);
+        let s = format!(" ({})", display_basic(&value, false));
 
-        style
-            .paint(format!(" ({})", display_basic(&value, false)))
-            .to_string()
+        if use_ansi_coloring {
+            Color::DarkGray
+                .paint(s)
+                .to_string()
+        } else {
+            s
+        }
     }
 
     fn complete_hint(&self) -> String {

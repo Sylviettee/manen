@@ -11,13 +11,11 @@ use emmylua_parser::{LuaParser, ParserConfig};
 use mlua::prelude::*;
 use reedline::Highlighter;
 
-use format::comfy_table;
-use inspect::inspect;
+use inspect::{inspect, comfy_table};
 use parse::LuaHighlighter;
 
 mod completion;
 mod editor;
-mod format;
 mod hinter;
 mod inspect;
 mod parse;

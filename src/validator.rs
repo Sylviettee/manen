@@ -1,6 +1,7 @@
 use mlua::prelude::*;
 use reedline::{ValidationResult, Validator};
 
+// TODO; we should instead rely on the parser to determine incomplete input
 pub struct LuaValidator {
     lua: Lua,
 }

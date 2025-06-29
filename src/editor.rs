@@ -15,7 +15,7 @@ use reedline::{
 };
 
 use crate::{
-    completion::LuaCompleter, format::TableFormat, hinter::LuaHinter, inspect::display_basic,
+    completion::LuaCompleter, hinter::LuaHinter, inspect::{display_basic, TableFormat},
     parse::LuaHighlighter, validator::LuaValidator,
 };
 
