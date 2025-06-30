@@ -128,8 +128,8 @@ pub fn cleanup_string(lua_str: &LuaString) -> String {
     escape_control(&remove_invalid(&lua_str.as_bytes()))
 }
 
-fn format_string(lua_str: &LuaString, colorize: bool) -> String {
-    let mut s = remove_invalid(&lua_str.as_bytes());
+pub fn format_string_bytes(bytes: &[u8], colorize: bool) -> String {
+    let mut s = remove_invalid(bytes);
 
     if colorize {
         s = escape_control_color(&s);
@@ -144,6 +144,10 @@ fn format_string(lua_str: &LuaString, colorize: bool) -> String {
         (false, true) => format!("'{s}'"),
         (true, false) | (false, false) => format!("\"{s}\""),
     }
+}
+
+fn format_string_lua_string(lua_str: &LuaString, colorize: bool) -> String {
+    format_string_bytes(&lua_str.as_bytes(), colorize)
 }
 
 fn addr_color(value: &LuaValue) -> Option<(String, Color)> {
@@ -182,7 +186,7 @@ pub fn display_basic(value: &LuaValue, colorize: bool) -> String {
                 LuaValue::Boolean(b) => Color::LightYellow.paint(b.to_string()),
                 LuaValue::Integer(i) => Color::LightYellow.paint(i.to_string()),
                 LuaValue::Number(n) => Color::LightYellow.paint(n.to_string()),
-                LuaValue::String(s) => Color::Green.paint(format_string(s, colorize)),
+                LuaValue::String(s) => Color::Green.paint(format_string_lua_string(s, colorize)),
                 #[cfg(feature = "luau")]
                 LuaValue::Vector(v) => {
                     let strings: &[AnsiString<'static>] = &[

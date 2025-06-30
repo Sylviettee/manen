@@ -28,4 +28,5 @@ lazy_static = "1.5.0"
 mlua = { version = "0.10.5", features = ["anyhow", "send", "async"] }
 nu-ansi-term = "0.50.1"
 reedline = "0.40.0"
+rexpect = "0.6.2"
 rowan = "0.16.1"
