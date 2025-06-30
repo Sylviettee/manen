@@ -18,7 +18,7 @@ use crate::{
     completion::LuaCompleter,
     hinter::LuaHinter,
     inspect::{TableFormat, display_basic},
-    lua::{LuaExecutor, MluaExecutor},
+    lua::{LuaExecutor, MluaExecutor, SystemLuaExecutor},
     parse::LuaHighlighter,
     validator::LuaValidator,
 };
@@ -33,8 +33,9 @@ pub struct Editor {
 
 impl Editor {
     pub fn new() -> LuaResult<Self> {
-        let mlua = Arc::new(MluaExecutor::new());
-        let version: String = mlua.globals().get("_VERSION")?;
+        // let mlua = Arc::new(MluaExecutor::new());
+        let mlua = Arc::new(SystemLuaExecutor::new("lua5.1").unwrap());
+        let version: String = mlua.globals()?.get("_VERSION")?;
 
         let prompt = DefaultPrompt::new(
             DefaultPromptSegment::Basic(version),

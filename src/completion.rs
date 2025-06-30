@@ -46,12 +46,15 @@ impl LuaCompleter {
     }
 
     fn globals(&self) -> Vec<String> {
-        self.lua_executor
-            .globals()
-            .pairs()
-            .flatten()
-            .map(|(k, _): (String, LuaValue)| k)
-            .collect()
+        if let Ok(globals) = self.lua_executor.globals() {
+            globals
+                .pairs()
+                .flatten()
+                .map(|(k, _): (String, LuaValue)| k)
+                .collect()
+        } else {
+            Vec::new()
+        }
     }
 
     fn resolve_scopes(&self) -> Vec<Scope> {
@@ -336,7 +339,7 @@ mod tests {
     #[test]
     fn upvalues() {
         let lua = lua_executor();
-        lua.globals().set("foobar", "").unwrap();
+        lua.globals().unwrap().set("foobar", "").unwrap();
 
         let mut completer = LuaCompleter::new(lua);
 

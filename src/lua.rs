@@ -1,14 +1,19 @@
-use std::{io::{self, Write}, process::{Child, ChildStdin, ChildStdout, Command, Stdio}, sync::{
-    atomic::{AtomicBool, Ordering}, Arc, RwLock
-}};
+use std::{
+    process::Command,
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use mlua::prelude::*;
-
-use crate::inspect::format_string_bytes;
+use rexpect::session::{PtySession, spawn_command};
+use send_wrapper::SendWrapper;
+use thiserror::Error;
 
 pub trait LuaExecutor: Send + Sync {
     fn exec(&self, code: &str) -> LuaResult<LuaValue>;
-    fn globals(&self) -> LuaTable;
+    fn globals(&self) -> LuaResult<LuaTable>;
     fn cancel(&self);
 }
 
@@ -42,8 +47,8 @@ impl LuaExecutor for MluaExecutor {
         self.lua.load(code).set_name("=repl").eval()
     }
 
-    fn globals(&self) -> LuaTable {
-        self.lua.globals()
+    fn globals(&self) -> LuaResult<LuaTable> {
+        Ok(self.lua.globals())
     }
 
     fn cancel(&self) {
@@ -51,19 +56,22 @@ impl LuaExecutor for MluaExecutor {
     }
 }
 
-const LUA_RPC: &str = include_str!("../lua/rpc.lua");
-
 pub struct SystemLuaExecutor {
-    child: RwLock<Child>,
-    stdin: RwLock<ChildStdin>,
-    stdout: RwLock<ChildStdout>,
-
+    process: RwLock<SendWrapper<PtySession>>,
     program: String,
+    lua: Lua,
+}
+
+#[derive(Debug, Error)]
+pub enum SystemLuaError {
+    #[error("lua  error: {0}")]
+    Lua(#[from] LuaError),
+    #[error("expect error: {0}")]
+    Expect(#[from] rexpect::error::Error),
 }
 
 pub enum RpcCommand {
     Globals,
-    Ping,
     Exec(String),
 }
 
@@ -71,57 +79,56 @@ impl RpcCommand {
     pub fn to_lua(&self) -> String {
         let func = match self {
             Self::Globals => "globals",
-            Self::Ping => "ping",
-            Self::Exec(_) => "exec"
+            Self::Exec(_) => "exec",
         };
 
-        let param = if let Self::Exec(code) = self {
-            format_string_bytes(code.as_bytes(), false)
+        if let Self::Exec(code) = self {
+            format!("{func}:{code}")
         } else {
-            String::new()
-        };
-
-        format!("rpc.{func}({param})")
+            func.to_string()
+        }
     }
 }
 
 impl SystemLuaExecutor {
-    pub fn new(program: &str) -> io::Result<Self> {
-        let (child, stdin, stdout) = Self::obtain_process(program)?;
-
+    pub fn new(program: &str) -> Result<Self, SystemLuaError> {
         Ok(Self {
-            child: RwLock::new(child),
-            stdin: RwLock::new(stdin),
-            stdout: RwLock::new(stdout),
-
+            process: RwLock::new(SendWrapper::new(Self::obtain_process(program)?)),
             program: program.to_string(),
+            lua: unsafe { Lua::unsafe_new() },
         })
     }
 
-    fn obtain_process(program: &str) -> io::Result<(Child, ChildStdin, ChildStdout)> {
-        let mut child = Command::new(program)
-            .stderr(Stdio::null())
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()?;
+    fn obtain_process(program: &str) -> Result<PtySession, SystemLuaError> {
+        let mut cmd = Command::new(program);
+        cmd.arg("lua/rpc.lua");
 
-        let mut stdin = child.stdin.take().unwrap();
+        Ok(spawn_command(cmd, None)?)
+    }
 
-        stdin.write_all(LUA_RPC.as_bytes())?;
+    fn request(&self, command: RpcCommand) -> Result<LuaTable, SystemLuaError> {
+        let mut process = self.process.write().expect("write process");
 
-        let stdout = child.stdout.take().unwrap();
+        let cmd = command.to_lua();
+        process.send_line(&cmd)?;
 
-        Ok((child, stdin, stdout))
+        let code = process.read_line()?;
+
+        Ok(self.lua.load(code).eval()?)
     }
 }
 
 impl LuaExecutor for SystemLuaExecutor {
     fn exec(&self, code: &str) -> LuaResult<LuaValue> {
-        todo!()
+        self.request(RpcCommand::Exec(code.to_string()))
+            .map_err(LuaError::external)?
+            .get("data")
     }
 
-    fn globals(&self) -> LuaTable {
-        todo!()
+    fn globals(&self) -> LuaResult<LuaTable> {
+        self.request(RpcCommand::Globals)
+            .map_err(LuaError::external)?
+            .get("data")
     }
 
     fn cancel(&self) {

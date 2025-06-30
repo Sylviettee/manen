@@ -1,4 +1,4 @@
----@diagnostic disable: lowercase-global
+local serpent
 do
    --[[
    Serpent source is released under the MIT License
@@ -25,8 +25,11 @@ do
    ]]
    local n, v = "serpent", "0.303" -- (C) 2012-18 Paul Kulchenko; MIT License
    local c, d = "Paul Kulchenko", "Lua serializer and pretty printer"
-   local snum = { [tostring(1 / 0)] = '1/0 --[[math.huge]]', [tostring(-1 / 0)] = '-1/0 --[[-math.huge]]',
-      [tostring(0 / 0)] = '0/0' }
+   local snum = {
+      [tostring(1 / 0)] = '1/0 --[[math.huge]]',
+      [tostring(-1 / 0)] = '-1/0 --[[-math.huge]]',
+      [tostring(0 / 0)] = '0/0'
+   }
    local badtype = { thread = true, userdata = true, cdata = true }
    local getmetatable = debug and debug.getmetatable or getmetatable
    local pairs = function(t) return next, t end -- avoid using __pairs in Lua 5.2+
@@ -70,8 +73,10 @@ do
                 and (nohuge and snum[tostring(s)] or numformat:format(s):gsub(",", ".")) or origsafestr(s)
          end
       end
-      local function comment(s, l) return comm and (l or 0) < comm and ' --[[' .. select(2, pcall(tostring, s)) .. ']]' or
-         '' end
+      local function comment(s, l)
+         return comm and (l or 0) < comm and ' --[[' .. select(2, pcall(tostring, s)) .. ']]' or
+             ''
+      end
       local function globerr(s, l)
          return globals[s] and globals[s] .. comment(s, l) or not fatal
              and safestr(select(2, pcall(tostring, s))) or error("Can't serialize " .. tostring(s))
@@ -83,15 +88,15 @@ do
          return (path or '') .. (plain and path and '.' or '') .. safe, safe
       end
       local alphanumsort = type(opts.sortkeys) == 'function' and opts.sortkeys or
-      function(k, o, n)                                                                          -- k=keys, o=originaltable, n=padding
-         local maxn, to = tonumber(n) or 12, { number = 'a', string = 'b' }
-         local function padnum(d) return ("%0" .. tostring(maxn) .. "d"):format(tonumber(d)) end
-         table.sort(k, function(a, b)
-            -- sort numeric keys first: k[key] is not nil for numerical keys
-            return (k[a] ~= nil and 0 or to[type(a)] or 'z') .. (tostring(a):gsub("%d+", padnum))
-                < (k[b] ~= nil and 0 or to[type(b)] or 'z') .. (tostring(b):gsub("%d+", padnum))
-         end)
-      end
+          function(k, o, n) -- k=keys, o=originaltable, n=padding
+             local maxn, to = tonumber(n) or 12, { number = 'a', string = 'b' }
+             local function padnum(d) return ("%0" .. tostring(maxn) .. "d"):format(tonumber(d)) end
+             table.sort(k, function(a, b)
+                -- sort numeric keys first: k[key] is not nil for numerical keys
+                return (k[a] ~= nil and 0 or to[type(a)] or 'z') .. (tostring(a):gsub("%d+", padnum))
+                    < (k[b] ~= nil and 0 or to[type(b)] or 'z') .. (tostring(b):gsub("%d+", padnum))
+             end)
+          end
       local function val2str(t, name, indent, insref, path, plainindex, level)
          local ttype, level, mt = type(t), (level or 0), getmetatable(t)
          local spath, sname = safename(path, name)
@@ -136,7 +141,7 @@ do
                    or opts.keyallow and not opts.keyallow[key]
                    or opts.keyignore and opts.keyignore[key]
                    or opts.valtypeignore and opts.valtypeignore[type(value)] -- skipping ignored value types
-                   or sparse and value == nil then                 -- skipping nils; do nothing
+                   or sparse and value == nil then                           -- skipping nils; do nothing
                elseif ktype == 'table' or ktype == 'function' or badtype[ktype] then
                   if not seen[key] and not globals[key] then
                      sref[#sref + 1] = 'placeholder'
@@ -145,7 +150,8 @@ do
                   end
                   sref[#sref + 1] = 'placeholder'
                   local path = seen[t] .. '[' .. tostring(seen[key] or globals[key] or gensym(key)) .. ']'
-                  sref[#sref] = path .. space .. '=' .. space .. tostring(seen[value] or val2str(value, nil, indent, path))
+                  sref[#sref] = path ..
+                  space .. '=' .. space .. tostring(seen[value] or val2str(value, nil, indent, path))
                else
                   out[#out + 1] = val2str(value, key, indent, nil, seen[t], plainindex, level + 1)
                   if maxlen then
@@ -170,13 +176,13 @@ do
             return tag .. (func or globerr(t, level))
          else
             return tag .. safestr(t)
-         end                          -- handle all other types
+         end -- handle all other types
       end
       local sepr = indent and "\n" or ";" .. space
       local body = val2str(t, name, indent) -- this call also populates sref
       local tail = #sref > 1 and table.concat(sref, sepr) .. sepr or ''
       local warn = opts.comment and #sref > 1 and space .. "--[[incomplete output with shared/self-references skipped]]" or
-      ''
+          ''
       return not name and body .. warn or "do local " .. body .. sepr .. tail .. "return " .. name .. sepr .. "end"
    end
 
@@ -210,7 +216,7 @@ do
    }
 end
 
-rpc = {}
+local rpc = {}
 
 function rpc.respond(command, data)
    io.write(serpent.dump({
@@ -218,7 +224,8 @@ function rpc.respond(command, data)
       data = data,
       command = command
    }, { metatostring = false }))
-   io.write('\n--[[ done ]]--\n')
+   io.write('\n')
+   io.flush()
 end
 
 function rpc.globals()
@@ -226,11 +233,25 @@ function rpc.globals()
 end
 
 function rpc.exec(code)
-   local res = assert(load(code, 'repl', 't'))()
+   local l = _VERSION == 'Lua 5.1' and loadstring or load
+   local res = l(code, 'repl')
 
-   rpc.respond('exec', res)
+   if not res then
+      res = assert(l('return (' .. code .. ')', 'repl'))
+   end
+
+   rpc.respond('exec', res())
 end
 
-function rpc.ping()
-   rpc.respond('ping', 'pong')
+for line in io.stdin:lines() do
+   local cmd, arg = line:match('(.-):(.*)')
+   if cmd == nil then
+      cmd = line
+   end
+
+   local success, err = pcall(rpc[cmd], arg)
+
+   if not success then
+      rpc.respond('error', err)
+   end
 end
