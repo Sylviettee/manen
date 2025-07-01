@@ -70,9 +70,11 @@ pub enum SystemLuaError {
     Expect(#[from] rexpect::error::Error),
     #[error("restarted system Lua")]
     Restarted,
+    #[error("runtime error")]
+    RuntimeError(String),
 }
 
-pub enum RpcCommand {
+enum RpcCommand {
     Globals,
     Exec(String),
 }
@@ -125,6 +127,10 @@ impl SystemLuaExecutor {
             };
 
             if let Ok(res) = self.lua.load(&code).eval::<LuaTable>() {
+                if res.get::<String>("ty")? == "error" {
+                    return Err(SystemLuaError::RuntimeError(res.get("data")?));
+                };
+
                 return Ok(res);
             } else {
                 println!("{}", &code);
