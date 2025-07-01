@@ -114,16 +114,22 @@ impl SystemLuaExecutor {
         let cmd = command.to_lua();
         process.send_line(&cmd)?;
 
-        let code = match process.read_line() {
-            Ok(code) => code,
-            Err(rexpect::error::Error::EOF { .. }) => {
-                *process = SendWrapper::new(Self::obtain_process(&self.program)?);
-                return Err(SystemLuaError::Restarted);
-            }
-            x => x?,
-        };
+        loop {
+            let code = match process.read_line() {
+                Ok(code) => code,
+                Err(rexpect::error::Error::EOF { .. }) => {
+                    *process = SendWrapper::new(Self::obtain_process(&self.program)?);
+                    return Err(SystemLuaError::Restarted);
+                }
+                x => x?,
+            };
 
-        Ok(self.lua.load(code).eval()?)
+            if let Ok(res) = self.lua.load(&code).eval::<LuaTable>() {
+                return Ok(res);
+            } else {
+                println!("{}", &code);
+            }
+        }
     }
 }
 
