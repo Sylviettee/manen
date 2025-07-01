@@ -64,10 +64,12 @@ pub struct SystemLuaExecutor {
 
 #[derive(Debug, Error)]
 pub enum SystemLuaError {
-    #[error("lua  error: {0}")]
+    #[error("lua error: {0}")]
     Lua(#[from] LuaError),
     #[error("expect error: {0}")]
     Expect(#[from] rexpect::error::Error),
+    #[error("restarted system Lua")]
+    Restarted,
 }
 
 pub enum RpcCommand {
@@ -112,7 +114,14 @@ impl SystemLuaExecutor {
         let cmd = command.to_lua();
         process.send_line(&cmd)?;
 
-        let code = process.read_line()?;
+        let code = match process.read_line() {
+            Ok(code) => code,
+            Err(rexpect::error::Error::EOF { .. }) => {
+                *process = SendWrapper::new(Self::obtain_process(&self.program)?);
+                return Err(SystemLuaError::Restarted);
+            }
+            x => x?,
+        };
 
         Ok(self.lua.load(code).eval()?)
     }
