@@ -2,6 +2,8 @@
 
 Fancy Lua REPl! Featuring support for Lua 5.1-5.4, LuaJIT, and more!
 
+[![asciicast](https://asciinema.org/a/E0ngQHve6PpbTjDR5FEATnssm.svg)](https://asciinema.org/a/E0ngQHve6PpbTjDR5FEATnssm)
+
 ## Features
 
 * Syntax highlighting
