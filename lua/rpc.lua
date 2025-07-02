@@ -232,13 +232,11 @@ function rpc.globals()
    rpc.respond('globals', _G)
 end
 
-local loadstring_luas = {
-   ['Lua 5.1'] = true,
-   ['Luau'] = true,
-}
+local load_fn = _VERSION == 'Lua 5.1' and loadstring or load
 
 function rpc.exec(code)
-   local load_fn = loadstring_luas[_VERSION] and loadstring or load
+   code = load_fn('return ' .. code)()
+
    local fn = load_fn(code, 'repl')
 
    if not fn then

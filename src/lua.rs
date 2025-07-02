@@ -17,6 +17,8 @@ use send_wrapper::SendWrapper;
 use tempfile::NamedTempFile;
 use thiserror::Error;
 
+use crate::inspect::format_string_bytes;
+
 pub trait LuaExecutor: Send + Sync {
     fn exec(&self, code: &str) -> LuaResult<LuaValue>;
     fn globals(&self) -> LuaResult<LuaTable>;
@@ -96,7 +98,7 @@ impl RpcCommand {
     pub fn to_lua(&self) -> String {
         match self {
             Self::Globals => String::from("globals"),
-            Self::Exec(code) => format!("exec:{code}"),
+            Self::Exec(code) => format!("exec:{}", format_string_bytes(code.as_bytes(), false)),
             Self::Prepare(file) => format!("prepare:{file}"),
         }
     }
