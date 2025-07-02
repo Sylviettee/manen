@@ -94,6 +94,8 @@ impl RpcCommand {
     }
 }
 
+const RPC_CODE: &str = include_str!("../lua/rpc.lua");
+
 impl SystemLuaExecutor {
     pub fn new(program: &str) -> Result<Self, SystemLuaError> {
         Ok(Self {
@@ -105,7 +107,9 @@ impl SystemLuaExecutor {
 
     fn obtain_process(program: &str) -> Result<PtySession, SystemLuaError> {
         let mut cmd = Command::new(program);
-        cmd.arg("lua/rpc.lua");
+
+        cmd.arg("-e");
+        cmd.arg(RPC_CODE);
 
         Ok(spawn_command(cmd, None)?)
     }
