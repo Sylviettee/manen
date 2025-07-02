@@ -187,24 +187,6 @@ pub fn display_basic(value: &LuaValue, colorize: bool) -> String {
                 LuaValue::Integer(i) => Color::LightYellow.paint(i.to_string()),
                 LuaValue::Number(n) => Color::LightYellow.paint(n.to_string()),
                 LuaValue::String(s) => Color::Green.paint(format_string_lua_string(s, colorize)),
-                #[cfg(feature = "luau")]
-                LuaValue::Vector(v) => {
-                    let strings: &[AnsiString<'static>] = &[
-                        Color::Default.paint("<"),
-                        Color::LightYellow.paint(v.x().to_string()),
-                        Color::Default.paint(", "),
-                        Color::LightYellow.paint(v.y().to_string()),
-                        Color::Default.paint(", "),
-                        Color::LightYellow.paint(v.z().to_string()),
-                        #[cfg(feature = "luau-vector4")]
-                        Color::Default.paint(", "),
-                        #[cfg(feature = "luau-vector4")]
-                        Color::LightYellow.paint(v.w().to_string()),
-                        Color::Default.paint(">"),
-                    ];
-
-                    return handle_strings(colorize, AnsiStrings(strings));
-                }
                 val => Color::LightGray.paint(val.to_string().unwrap_or_default()),
             }];
 

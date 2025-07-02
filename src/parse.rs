@@ -36,12 +36,6 @@ pub fn config<'cache>() -> ParserConfig<'cache> {
     ParserConfig::with_level(LuaLanguageLevel::LuaJIT)
 }
 
-// not entirely accurate but this will do for now
-#[cfg(feature = "luau")]
-pub fn config<'cache>() -> ParserConfig<'cache> {
-    ParserConfig::with_level(LuaLanguageLevel::Lua51)
-}
-
 fn node_name(node: &LuaAst) -> Option<&'static str> {
     match node {
         LuaAst::LuaChunk(_) => Some("chunk"),
