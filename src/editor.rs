@@ -29,9 +29,7 @@ pub struct Editor {
 impl Editor {
     pub fn new() -> LuaResult<Self> {
         let config = Config::load()?;
-        let lua_executor = config
-            .get_executor()
-            .map_err(|e| LuaError::ExternalError(Arc::new(e)))?;
+        let lua_executor = config.get_executor().map_err(LuaError::external)?;
 
         let version: String = lua_executor.globals()?.get("_VERSION")?;
 

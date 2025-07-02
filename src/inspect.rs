@@ -426,9 +426,7 @@ impl TableFormat {
                     Ok(format!("table@{:?}", tbl.to_pointer()))
                 }
             }
-            TableFormat::Inspect => {
-                display_table(tbl, colorize).map_err(|e| LuaError::ExternalError(Arc::new(e)))
-            }
+            TableFormat::Inspect => display_table(tbl, colorize).map_err(LuaError::external),
             TableFormat::ComfyTable => comfy_table(tbl, true),
         }
     }
