@@ -63,7 +63,8 @@ impl Editor {
             .with_highlighter(Box::new(LuaHighlighter))
             .with_hinter(Box::new(LuaHinter))
             .with_edit_mode(Box::new(Emacs::new(keybindings)))
-            .with_menu(ReedlineMenu::EngineCompleter(Box::new(ide_menu)));
+            .with_menu(ReedlineMenu::EngineCompleter(Box::new(ide_menu)))
+            .with_ansi_colors(config.color_output);
 
         if let Some(proj_dirs) = ProjectDirs::from("gay.gayest", "", "Manen") {
             let history = FileBackedHistory::with_file(
