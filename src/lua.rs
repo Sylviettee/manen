@@ -1,14 +1,20 @@
 use std::{
+    io::Write,
     process::Command,
     sync::{
         Arc, RwLock,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicI32, Ordering},
     },
 };
 
 use mlua::prelude::*;
+use nix::{
+    sys::signal::{Signal, kill},
+    unistd::Pid,
+};
 use rexpect::session::{PtySession, spawn_command};
 use send_wrapper::SendWrapper;
+use tempfile::NamedTempFile;
 use thiserror::Error;
 
 pub trait LuaExecutor: Send + Sync {
@@ -57,9 +63,13 @@ impl LuaExecutor for MluaExecutor {
 }
 
 pub struct SystemLuaExecutor {
-    process: RwLock<SendWrapper<PtySession>>,
+    session: RwLock<SendWrapper<PtySession>>,
     program: String,
     lua: Lua,
+
+    cancellation_file: RwLock<Option<NamedTempFile>>,
+    pid: AtomicI32,
+    is_stopping: AtomicBool,
 }
 
 #[derive(Debug, Error)]
@@ -68,6 +78,8 @@ pub enum SystemLuaError {
     Lua(#[from] LuaError),
     #[error("expect error: {0}")]
     Expect(#[from] rexpect::error::Error),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
     #[error("restarted system Lua")]
     Restarted,
     #[error("runtime error")]
@@ -77,19 +89,15 @@ pub enum SystemLuaError {
 enum RpcCommand {
     Globals,
     Exec(String),
+    Prepare(String),
 }
 
 impl RpcCommand {
     pub fn to_lua(&self) -> String {
-        let func = match self {
-            Self::Globals => "globals",
-            Self::Exec(_) => "exec",
-        };
-
-        if let Self::Exec(code) = self {
-            format!("{func}:{code}")
-        } else {
-            func.to_string()
+        match self {
+            Self::Globals => String::from("globals"),
+            Self::Exec(code) => format!("exec:{code}"),
+            Self::Prepare(file) => format!("prepare:{file}"),
         }
     }
 }
@@ -98,33 +106,88 @@ const RPC_CODE: &str = include_str!("../lua/rpc.lua");
 
 impl SystemLuaExecutor {
     pub fn new(program: &str) -> Result<Self, SystemLuaError> {
+        let (session, file) = Self::obtain_session(program)?;
+        let pid = session.process.child_pid.as_raw();
+
         Ok(Self {
-            process: RwLock::new(SendWrapper::new(Self::obtain_process(program)?)),
+            session: RwLock::new(SendWrapper::new(session)),
             program: program.to_string(),
             lua: unsafe { Lua::unsafe_new() },
+            cancellation_file: RwLock::new(file),
+            pid: AtomicI32::new(pid),
+            is_stopping: AtomicBool::new(false),
         })
     }
 
-    fn obtain_process(program: &str) -> Result<PtySession, SystemLuaError> {
+    fn obtain_session(
+        program: &str,
+    ) -> Result<(PtySession, Option<NamedTempFile>), SystemLuaError> {
         let mut cmd = Command::new(program);
 
         cmd.arg("-e");
         cmd.arg(RPC_CODE);
 
-        Ok(spawn_command(cmd, None)?)
+        let mut session = spawn_command(cmd, None)?;
+
+        // TODO; should this be in our cache/run dir?
+        let file = NamedTempFile::new()?;
+
+        let prepare = RpcCommand::Prepare(file.path().to_string_lossy().to_string());
+
+        let cmd = prepare.to_lua();
+        session.send_line(&cmd)?;
+
+        let lua = Lua::new();
+
+        loop {
+            let code = session.read_line()?;
+
+            if let Ok(prepare_result) = lua.load(&code).eval::<LuaTable>() {
+                if prepare_result.get::<bool>("data")? {
+                    return Ok((session, Some(file)));
+                } else {
+                    return Ok((session, None));
+                }
+            }
+        }
+    }
+
+    fn restart_process(&self, session: &mut SendWrapper<PtySession>) -> Result<(), SystemLuaError> {
+        let (pty, file) = Self::obtain_session(&self.program)?;
+        self.pid
+            .store(pty.process.child_pid.as_raw(), Ordering::Relaxed);
+
+        *session = SendWrapper::new(pty);
+
+        let mut cancellation_file = self
+            .cancellation_file
+            .write()
+            .expect("write cancellation_file");
+        *cancellation_file = file;
+
+        Ok(())
     }
 
     fn request(&self, command: RpcCommand) -> Result<LuaTable, SystemLuaError> {
-        let mut process = self.process.write().expect("write process");
+        self.is_stopping.store(false, Ordering::Relaxed);
+
+        let mut session = self.session.write().expect("write process");
 
         let cmd = command.to_lua();
-        process.send_line(&cmd)?;
+
+        if session.send_line(&cmd).is_err() {
+            // killed
+            self.restart_process(&mut session)?;
+
+            return Err(SystemLuaError::Restarted);
+        }
 
         loop {
-            let code = match process.read_line() {
+            let code = match session.read_line() {
                 Ok(code) => code,
                 Err(rexpect::error::Error::EOF { .. }) => {
-                    *process = SendWrapper::new(Self::obtain_process(&self.program)?);
+                    self.restart_process(&mut session)?;
+
                     return Err(SystemLuaError::Restarted);
                 }
                 x => x?,
@@ -157,6 +220,23 @@ impl LuaExecutor for SystemLuaExecutor {
     }
 
     fn cancel(&self) {
-        todo!()
+        let mut cancellation_file = self
+            .cancellation_file
+            .write()
+            .expect("write cancellation_file");
+
+        if !self.is_stopping.load(Ordering::Relaxed) {
+            self.is_stopping.store(true, Ordering::Relaxed);
+
+            if let Some(file) = cancellation_file.as_mut() {
+                if file.write_all(b"stop").is_ok() && file.flush().is_ok() {
+                    return;
+                }
+            }
+        }
+
+        // Restart process
+        let pid = self.pid.load(Ordering::Relaxed);
+        let _ = kill(Pid::from_raw(pid), Signal::SIGKILL);
     }
 }

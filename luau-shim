@@ -1,8 +1,0 @@
-#!/bin/bash
-
-# luau-shim -e <rpc code>
-code="$2"
-
-luau << EOF
-$code
-EOF

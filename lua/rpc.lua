@@ -232,15 +232,72 @@ function rpc.globals()
    rpc.respond('globals', _G)
 end
 
-function rpc.exec(code)
-   local l = _VERSION == 'Lua 5.1' and loadstring or load
-   local res = l(code, 'repl')
+local loadstring_luas = {
+   ['Lua 5.1'] = true,
+   ['Luau'] = true,
+}
 
-   if not res then
-      res = assert(l('return (' .. code .. ')', 'repl'))
+function rpc.exec(code)
+   local load_fn = loadstring_luas[_VERSION] and loadstring or load
+   local fn = load_fn(code, 'repl')
+
+   if not fn then
+      fn = assert(load_fn('return (' .. code .. ')', 'repl'))
    end
 
-   rpc.respond('exec', res())
+   local function cleanup()
+      if debug and debug.sethook then
+         debug.sethook()
+      end
+
+      if io and io.open and rpc.cancel_file then
+         local f = io.open(rpc.cancel_file, 'w')
+
+         if f then
+            f:close()
+         end
+      end
+   end
+
+   if debug and debug.sethook and io and io.open and rpc.cancel_file then
+      local function cancel()
+         local f = assert(io.open(rpc.cancel_file, 'r'))
+
+         local data = f:read('*a')
+
+         f:close()
+
+         if data:find('stop') then
+            cleanup()
+            error('cancelled')
+         end
+      end
+
+      -- we can't do every line like in MluaExecutor due to the FS call
+      debug.sethook(cancel, "", 500000)
+   end
+
+   local success, res = pcall(fn)
+
+   cleanup()
+
+   if success then
+      rpc.respond('exec', res)
+   else
+      rpc.respond('error', res)
+   end
+end
+
+function rpc.prepare(file)
+   -- LuaJIT can't stop due to JIT
+   if not io or jit then
+      rpc.respond('cancel', false)
+      return
+   end
+
+   rpc.cancel_file = file
+
+   rpc.respond('cancel', true)
 end
 
 for line in io.stdin:lines() do

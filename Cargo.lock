@@ -728,11 +728,13 @@ dependencies = [
  "emmylua_parser",
  "lazy_static",
  "mlua",
+ "nix",
  "nu-ansi-term",
  "reedline",
  "rexpect",
  "rowan",
  "send_wrapper",
+ "tempfile",
  "thiserror",
 ]
 
