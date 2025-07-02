@@ -13,19 +13,25 @@ pub enum Executor {
     Embedded,
 }
 
-impl Default for Executor {
-    fn default() -> Self {
-        Self::Embedded
-    }
-}
-
-#[derive(Clone, Default, FromLua)]
+#[derive(Clone, FromLua)]
 pub struct Config {
     pub executor: Executor,
     pub system_lua: Option<PathBuf>,
     pub table_format: TableFormat,
     pub history_size: usize,
     pub color_output: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            executor: Executor::Embedded,
+            system_lua: None,
+            table_format: TableFormat::Inspect,
+            history_size: 256,
+            color_output: true,
+        }
+    }
 }
 
 impl Config {

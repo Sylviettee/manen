@@ -355,12 +355,6 @@ pub enum TableFormat {
     Address,
 }
 
-impl Default for TableFormat {
-    fn default() -> Self {
-        Self::Inspect
-    }
-}
-
 fn comfy_table_inner(
     tbl: &LuaTable,
     recursive: bool,
