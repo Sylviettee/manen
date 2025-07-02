@@ -1,6 +1,6 @@
 use directories::ProjectDirs;
 use mlua::prelude::*;
-use std::{path::PathBuf, sync::Arc};
+use std::{fs, path::PathBuf, sync::Arc};
 
 use crate::{
     inspect::TableFormat,
@@ -57,16 +57,36 @@ impl Config {
     }
 
     pub fn get_executor(&self) -> Result<Arc<dyn LuaExecutor>, SystemLuaError> {
-        match self.executor {
-            Executor::Embedded => Ok(Arc::new(MluaExecutor::new())),
+        let executor = match self.executor {
+            Executor::Embedded => Arc::new(MluaExecutor::new()),
             Executor::System => {
                 if let Some(path) = &self.system_lua {
-                    Ok(Arc::new(SystemLuaExecutor::new(&path.to_string_lossy())?))
+                    Arc::new(SystemLuaExecutor::new(&path.to_string_lossy())?)
                 } else {
-                    Ok(Arc::new(MluaExecutor::new()))
+                    Arc::new(MluaExecutor::new()) as Arc<dyn LuaExecutor>
                 }
             }
+        };
+
+        if let Some(proj_dirs) = ProjectDirs::from("gay.gayest", "", "Manen") {
+            let config_dir = proj_dirs.config_dir();
+            let rc_file = config_dir.join("rc.lua");
+
+            if rc_file.exists() {
+                let code = fs::read_to_string(rc_file)?;
+
+                executor.exec(&code)?;
+
+                let config = config_dir.to_string_lossy().to_string();
+                executor.exec(&format!(
+                    "if package and package.path then
+                        package.path = package.path .. ';{config}/?.lua;{config}/?/init.lua'
+                    end"
+                ))?;
+            }
         }
+
+        Ok(executor)
     }
 }
 
