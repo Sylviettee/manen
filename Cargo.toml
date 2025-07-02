@@ -3,6 +3,11 @@ name = "manen"
 version = "0.1.0"
 edition = "2024"
 
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "debuginfo"
+
 [features]
 default = ["vendored", "lua54"]
 vendored = ["mlua/vendored"]
