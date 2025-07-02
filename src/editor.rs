@@ -15,27 +15,25 @@ use reedline::{
 };
 
 use crate::{
-    completion::LuaCompleter,
-    hinter::LuaHinter,
-    inspect::{TableFormat, display_basic},
-    lua::{LuaExecutor, MluaExecutor, SystemLuaExecutor},
-    parse::LuaHighlighter,
-    validator::LuaValidator,
+    completion::LuaCompleter, config::Config, hinter::LuaHinter, inspect::display_basic,
+    lua::LuaExecutor, parse::LuaHighlighter, validator::LuaValidator,
 };
 
 pub struct Editor {
     prompt: DefaultPrompt,
     editor: Reedline,
     lua_executor: Arc<dyn LuaExecutor>,
-
-    table_format: TableFormat,
+    config: Config,
 }
 
 impl Editor {
     pub fn new() -> LuaResult<Self> {
-        // let mlua = Arc::new(MluaExecutor::new());
-        let mlua = Arc::new(SystemLuaExecutor::new("lua5.1").unwrap());
-        let version: String = mlua.globals()?.get("_VERSION")?;
+        let config = Config::load()?;
+        let lua_executor = config
+            .get_executor()
+            .map_err(|e| LuaError::ExternalError(Arc::new(e)))?;
+
+        let version: String = lua_executor.globals()?.get("_VERSION")?;
 
         let prompt = DefaultPrompt::new(
             DefaultPromptSegment::Basic(version),
@@ -62,7 +60,7 @@ impl Editor {
         let mut editor = Reedline::create()
             .with_validator(Box::new(LuaValidator::new()))
             .with_completer(Box::new(LuaCompleter::new(
-                mlua.clone() as Arc<dyn LuaExecutor>
+                lua_executor.clone() as Arc<dyn LuaExecutor>
             )))
             .with_highlighter(Box::new(LuaHighlighter))
             .with_hinter(Box::new(LuaHinter))
@@ -70,7 +68,10 @@ impl Editor {
             .with_menu(ReedlineMenu::EngineCompleter(Box::new(ide_menu)));
 
         if let Some(proj_dirs) = ProjectDirs::from("gay.gayest", "", "Manen") {
-            let history = FileBackedHistory::with_file(256, proj_dirs.data_dir().join("history"));
+            let history = FileBackedHistory::with_file(
+                config.history_size,
+                proj_dirs.data_dir().join("history"),
+            );
 
             if let Ok(history) = history {
                 editor = editor.with_history(Box::new(history))
@@ -80,9 +81,8 @@ impl Editor {
         Ok(Self {
             prompt,
             editor,
-
-            table_format: TableFormat::ComfyTable(true),
-            lua_executor: mlua,
+            lua_executor,
+            config,
         })
     }
 
@@ -109,14 +109,6 @@ impl Editor {
 
             match signal {
                 Ok(Signal::Success(line)) => {
-                    if line.starts_with(".") {
-                        if let Err(e) = self.eval_special(&line) {
-                            eprintln!("{e}")
-                        }
-
-                        continue;
-                    }
-
                     is_running_lua.store(true, Ordering::Relaxed);
 
                     if let Err(e) = self.eval(&line) {
@@ -131,50 +123,13 @@ impl Editor {
         }
     }
 
-    // .help
-    // .format <format> [true/false]
-    fn eval_special(&mut self, line: &str) -> LuaResult<()> {
-        let mut split = line.strip_prefix(".").unwrap().split_whitespace();
-
-        let cmd = split.next();
-
-        match cmd {
-            Some("help") => {
-                println!(".help\tPrint this message");
-                println!(
-                    ".format <inspect|address|comfytable> [true|false]\tConfigure table printing, boolean configures nesting"
-                );
-            }
-            Some("format") => match split.next() {
-                Some("inspect") => {
-                    self.table_format = TableFormat::Inspect;
-                }
-                Some("address") => {
-                    self.table_format = TableFormat::Address;
-                }
-                Some("comfytable") => {
-                    let nested = split
-                        .next()
-                        .unwrap_or("")
-                        .parse::<bool>()
-                        .unwrap_or_default();
-
-                    self.table_format = TableFormat::ComfyTable(nested);
-                }
-                _ => println!("unknown subcommand"),
-            },
-            _ => println!("unknown command"),
-        }
-
-        Ok(())
-    }
-
     fn eval(&self, line: &str) -> LuaResult<()> {
         let value: LuaValue = self.lua_executor.exec(line)?;
+        let config = &self.config;
 
         let stringify = match value {
-            LuaValue::Table(tbl) => self.table_format.format(&tbl, true)?,
-            value => display_basic(&value, true),
+            LuaValue::Table(tbl) => config.table_format.format(&tbl, config.color_output)?,
+            value => display_basic(&value, config.color_output),
         };
 
         println!("{stringify}");

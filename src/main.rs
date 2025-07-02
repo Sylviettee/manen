@@ -15,6 +15,7 @@ use inspect::{comfy_table, inspect};
 use parse::LuaHighlighter;
 
 mod completion;
+mod config;
 mod editor;
 mod hinter;
 mod inspect;

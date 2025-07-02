@@ -368,9 +368,15 @@ pub fn inspect(value: &LuaValue, colorize: bool) -> LuaResult<String> {
 
 #[derive(Clone, Copy)]
 pub enum TableFormat {
-    ComfyTable(bool),
+    ComfyTable,
     Inspect,
     Address,
+}
+
+impl Default for TableFormat {
+    fn default() -> Self {
+        Self::Inspect
+    }
 }
 
 fn comfy_table_inner(
@@ -447,7 +453,7 @@ impl TableFormat {
             TableFormat::Inspect => {
                 display_table(tbl, colorize).map_err(|e| LuaError::ExternalError(Arc::new(e)))
             }
-            TableFormat::ComfyTable(recursive) => comfy_table(tbl, *recursive),
+            TableFormat::ComfyTable => comfy_table(tbl, true),
         }
     }
 }
