@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use emmylua_parser::{
-    LuaAst, LuaAstNode, LuaAstToken, LuaBlock, LuaNameExpr, LuaParser, LuaSyntaxTree,
+    LuaAst, LuaAstNode, LuaAstToken, LuaBlock, LuaExpr, LuaIndexExpr, LuaNameExpr, LuaParser,
+    LuaSyntaxTree, LuaTokenKind,
 };
 use mlua::prelude::*;
 use reedline::{Completer, Span, Suggestion};
-use rowan::TextRange;
+use rowan::{TextRange, TextSize};
 
 use crate::{lua::LuaExecutor, parse};
 
@@ -203,6 +204,78 @@ impl LuaCompleter {
             .collect()
     }
 
+    fn table_index(&self, position: u32) -> Option<(TextRange, Vec<String>)> {
+        let chunk = self.tree.get_chunk_node();
+
+        for index in chunk.descendants::<LuaIndexExpr>() {
+            let (range, name, is_dot) = index
+                .get_index_key()
+                .map(|k| k.get_range().map(|r| (r, k.get_path_part(), false)))
+                .unwrap_or_else(|| {
+                    index.token_by_kind(LuaTokenKind::TkDot).map(|t| {
+                        let range = t.get_range();
+                        (
+                            TextRange::new(range.start(), range.start() + TextSize::new(1)),
+                            String::new(),
+                            true,
+                        )
+                    })
+                })?;
+
+            if position >= range.start().into() && position < range.end().into() {
+                let mut children: Vec<String> = Vec::new();
+
+                for parent_index in index.descendants::<LuaIndexExpr>() {
+                    if let Some(token) = parent_index.get_name_token() {
+                        children.push(token.get_name_text().to_string());
+                    }
+
+                    if let Some(LuaExpr::NameExpr(token)) = parent_index.get_prefix_expr() {
+                        children.push(token.get_name_text()?);
+                    }
+                }
+
+                if children.len() > 1 {
+                    children.reverse();
+                    children.pop();
+                }
+
+                let fields = if let Ok(globals) = self.lua_executor.globals() {
+                    let mut var: LuaResult<LuaValue> = Ok(LuaValue::Table(globals));
+
+                    for index in children.iter().rev() {
+                        if let Ok(LuaValue::Table(tbl)) = var {
+                            var = tbl.get(index.as_str())
+                        }
+                    }
+
+                    if let Ok(LuaValue::Table(tbl)) = var {
+                        tbl.pairs()
+                            .flatten()
+                            .map(|(k, _): (String, LuaValue)| k)
+                            .filter(|s| s.starts_with(&name))
+                            .collect::<Vec<_>>()
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    Vec::new()
+                };
+
+                if is_dot {
+                    return Some((
+                        TextRange::new(range.start() + TextSize::new(1), range.end()),
+                        fields,
+                    ));
+                } else {
+                    return Some((range, fields));
+                }
+            }
+        }
+
+        None
+    }
+
     fn current_identifier(&self, position: u32) -> Option<(TextRange, String)> {
         let chunk = self.tree.get_chunk_node();
 
@@ -225,12 +298,22 @@ impl LuaCompleter {
 impl Completer for LuaCompleter {
     fn complete(&mut self, line: &str, pos: usize) -> Vec<Suggestion> {
         let pos = pos as u32;
-        // TODO; proper autocomplete
         self.refresh_tree(line);
 
         if let Some((range, current)) = self.current_identifier(pos.saturating_sub(1)) {
             return self
                 .autocomplete_upvalue(&current, pos)
+                .into_iter()
+                .map(|s| Suggestion {
+                    value: s,
+                    span: Span::new(range.start().into(), range.end().into()),
+                    ..Default::default()
+                })
+                .collect();
+        }
+
+        if let Some((range, fields)) = self.table_index(pos.saturating_sub(1)) {
+            return fields
                 .into_iter()
                 .map(|s| Suggestion {
                     value: s,
@@ -246,6 +329,8 @@ impl Completer for LuaCompleter {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use crate::lua::MluaExecutor;
 
     use super::*;
@@ -357,6 +442,42 @@ mod tests {
                 .map(|s| s.to_string())
                 .as_slice(),
             &completer.autocomplete_upvalue("foo", line_to_position(3, text))
+        );
+    }
+
+    #[test]
+    fn table_index_query() {
+        let lua = lua_executor();
+
+        let mut completer = LuaCompleter::new(lua);
+
+        completer.refresh_tree("print(table.ins");
+
+        assert_eq!(
+            &["insert"].map(|s| s.to_string()).as_slice(),
+            &completer.table_index(14).map(|t| t.1).unwrap()
+        );
+    }
+
+    #[test]
+    fn table_index_all() {
+        let lua = lua_executor();
+
+        lua.globals()
+            .unwrap()
+            .set("foo", HashMap::from([("bar", 1), ("baz", 2), ("ipsum", 3)]))
+            .unwrap();
+
+        let mut completer = LuaCompleter::new(lua);
+
+        completer.refresh_tree("print(foo.");
+
+        let mut fields = completer.table_index(9).map(|t| t.1).unwrap();
+        fields.sort();
+
+        assert_eq!(
+            &["bar", "baz", "ipsum"].map(|s| s.to_string()).as_slice(),
+            &fields
         );
     }
 }
