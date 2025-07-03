@@ -245,7 +245,7 @@ impl LuaCompleter {
 
                     for index in children.iter().rev() {
                         if let Ok(LuaValue::Table(tbl)) = var {
-                            var = tbl.get(index.as_str())
+                            var = tbl.raw_get(index.as_str())
                         }
                     }
 
